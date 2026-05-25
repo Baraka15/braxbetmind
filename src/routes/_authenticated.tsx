@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -7,8 +8,10 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) throw redirect({ to: "/login" });
+    // Strict guard: re-validate the JWT (not just a cached session) before
+    // letting any child route render.
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) throw redirect({ to: "/login" });
   },
   component: AuthedLayout,
 });
@@ -16,12 +19,48 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthedLayout() {
   const { user } = useAuth();
   const nav = useNavigate();
+  const [ready, setReady] = useState(false);
+
+  // Hard gate at render time: never paint protected UI without a live user.
+  // Listen for sign-out / token loss and bounce immediately.
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error || !data.user) {
+        nav({ to: "/login", replace: true });
+      } else {
+        setReady(true);
+      }
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT" || !session) {
+        setReady(false);
+        nav({ to: "/login", replace: true });
+      }
+    });
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [nav]);
+
   async function handleSignOut() {
     if (!confirm("Sign out of BetMind Pro?")) return;
+    setReady(false);
     await supabase.auth.signOut();
     toast.success("Signed out");
-    nav({ to: "/login" });
+    nav({ to: "/login", replace: true });
   }
+
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">

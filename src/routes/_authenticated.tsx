@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Activity, Settings as SettingsIcon, LogOut } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated")({
   beforeLoad: async () => {
@@ -15,6 +16,12 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthedLayout() {
   const { user } = useAuth();
   const nav = useNavigate();
+  async function handleSignOut() {
+    if (!confirm("Sign out of BetMind Pro?")) return;
+    await supabase.auth.signOut();
+    toast.success("Signed out");
+    nav({ to: "/login" });
+  }
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
@@ -25,9 +32,21 @@ function AuthedLayout() {
           </Link>
           <div className="flex items-center gap-3 text-sm">
             <span className="hidden text-muted-foreground md:inline">{user?.email}</span>
-            <Button asChild variant="ghost" size="icon"><Link to="/settings"><SettingsIcon className="h-4 w-4" /></Link></Button>
-            <Button variant="ghost" size="icon" onClick={async () => { await supabase.auth.signOut(); nav({ to: "/login" }); }}>
+            <Button asChild variant="ghost" size="sm" aria-label="Settings" title="Settings">
+              <Link to="/settings">
+                <SettingsIcon className="h-4 w-4" />
+                <span className="ml-2 hidden sm:inline">Settings</span>
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSignOut}
+              aria-label="Sign out"
+              title="Sign out"
+            >
               <LogOut className="h-4 w-4" />
+              <span className="ml-2 hidden sm:inline">Sign out</span>
             </Button>
           </div>
         </div>

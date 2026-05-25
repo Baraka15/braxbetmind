@@ -25,10 +25,13 @@ function SignupPage() {
       email, password,
       options: { emailRedirectTo: window.location.origin + "/dashboard" },
     });
+    if (error) { setLoading(false); return toast.error(error.message); }
+    // Auto-confirm is on — sign in immediately.
+    const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success("Check your email to confirm your account");
-    nav({ to: "/login" });
+    if (signInErr) { toast.success("Account created. Please sign in."); return nav({ to: "/login" }); }
+    toast.success("Welcome to BetMind Pro");
+    nav({ to: "/dashboard" });
   }
 
   return (

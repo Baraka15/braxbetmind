@@ -5,6 +5,10 @@
 
 export const SHARP_BOOKMAKERS = ["pinnacle", "betfair_ex_eu", "betfair_ex_uk", "circasports"] as const;
 
+export function isSharpBook(key: string): boolean {
+  return (SHARP_BOOKMAKERS as readonly string[]).includes(key);
+}
+
 export interface OddsApiOutcome {
   name: string;
   price: number;
@@ -49,7 +53,7 @@ export async function fetchOddsForLeague(sportKey: string): Promise<OddsApiEvent
   const params = new URLSearchParams({
     apiKey,
     regions: "eu,uk,us",
-    markets: "h2h",
+    markets: "h2h,totals,btts",
     oddsFormat: "decimal",
     dateFormat: "iso",
   });
@@ -57,6 +61,14 @@ export async function fetchOddsForLeague(sportKey: string): Promise<OddsApiEvent
   const res = await fetchWithBackoff(url);
   if (!res.ok) {
     const text = await res.text();
+    // Some plans don't allow `btts` — retry without it gracefully.
+    if (res.status === 422 || res.status === 400) {
+      const fallback = new URLSearchParams({
+        apiKey, regions: "eu,uk,us", markets: "h2h,totals", oddsFormat: "decimal", dateFormat: "iso",
+      });
+      const r2 = await fetchWithBackoff(`${BASE}/sports/${sportKey}/odds?${fallback}`);
+      if (r2.ok) return (await r2.json()) as OddsApiEvent[];
+    }
     throw new Error(`Odds API error ${res.status}: ${text.slice(0, 200)}`);
   }
   return (await res.json()) as OddsApiEvent[];

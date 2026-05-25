@@ -14,7 +14,249 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bankroll_history: {
+        Row: {
+          balance: number
+          created_at: string
+          date: string
+          id: string
+          pnl: number
+          user_id: string
+        }
+        Insert: {
+          balance: number
+          created_at?: string
+          date?: string
+          id?: string
+          pnl?: number
+          user_id: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string
+          date?: string
+          id?: string
+          pnl?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      bets: {
+        Row: {
+          ai_prob: number
+          best_odds: number
+          bookmaker: string
+          created_at: string
+          edge_pct: number
+          id: string
+          implied_prob: number
+          kelly_stake_pct: number
+          match_id: string
+          outcome: string
+          sharp_alert: boolean
+        }
+        Insert: {
+          ai_prob: number
+          best_odds: number
+          bookmaker: string
+          created_at?: string
+          edge_pct: number
+          id?: string
+          implied_prob: number
+          kelly_stake_pct: number
+          match_id: string
+          outcome: string
+          sharp_alert?: boolean
+        }
+        Update: {
+          ai_prob?: number
+          best_odds?: number
+          bookmaker?: string
+          created_at?: string
+          edge_pct?: number
+          id?: string
+          implied_prob?: number
+          kelly_stake_pct?: number
+          match_id?: string
+          outcome?: string
+          sharp_alert?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bets_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matches: {
+        Row: {
+          away: string
+          commence_time: string
+          home: string
+          id: string
+          league: string | null
+          sport_key: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          away: string
+          commence_time: string
+          home: string
+          id: string
+          league?: string | null
+          sport_key: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          away?: string
+          commence_time?: string
+          home?: string
+          id?: string
+          league?: string | null
+          sport_key?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      odds: {
+        Row: {
+          away_odds: number | null
+          bookmaker: string
+          draw_odds: number | null
+          home_odds: number | null
+          id: string
+          last_update: string
+          match_id: string
+          opening_away: number | null
+          opening_draw: number | null
+          opening_home: number | null
+        }
+        Insert: {
+          away_odds?: number | null
+          bookmaker: string
+          draw_odds?: number | null
+          home_odds?: number | null
+          id?: string
+          last_update?: string
+          match_id: string
+          opening_away?: number | null
+          opening_draw?: number | null
+          opening_home?: number | null
+        }
+        Update: {
+          away_odds?: number | null
+          bookmaker?: string
+          draw_odds?: number | null
+          home_odds?: number | null
+          id?: string
+          last_update?: string
+          match_id?: string
+          opening_away?: number | null
+          opening_draw?: number | null
+          opening_home?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "odds_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      predictions: {
+        Row: {
+          match_id: string
+          p_away: number
+          p_draw: number
+          p_home: number
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          match_id: string
+          p_away: number
+          p_draw: number
+          p_home: number
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          match_id?: string
+          p_away?: number
+          p_draw?: number
+          p_home?: number
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "predictions_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: true
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          bankroll: number
+          kelly_fraction: number
+          max_daily_bets: number
+          max_stake_pct: number
+          min_edge: number
+          tracked_leagues: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bankroll?: number
+          kelly_fraction?: number
+          max_daily_bets?: number
+          max_stake_pct?: number
+          min_edge?: number
+          tracked_leagues?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bankroll?: number
+          kelly_fraction?: number
+          max_daily_bets?: number
+          max_stake_pct?: number
+          min_edge?: number
+          tracked_leagues?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

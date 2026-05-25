@@ -46,39 +46,57 @@ export type Database = {
           ai_prob: number
           best_odds: number
           bookmaker: string
+          confidence_tier: string
+          consensus_prob: number | null
           created_at: string
           edge_pct: number
           id: string
           implied_prob: number
           kelly_stake_pct: number
+          market: string
           match_id: string
+          model_scores: Json
           outcome: string
+          rationale: string | null
+          selection: string | null
           sharp_alert: boolean
         }
         Insert: {
           ai_prob: number
           best_odds: number
           bookmaker: string
+          confidence_tier?: string
+          consensus_prob?: number | null
           created_at?: string
           edge_pct: number
           id?: string
           implied_prob: number
           kelly_stake_pct: number
+          market?: string
           match_id: string
+          model_scores?: Json
           outcome: string
+          rationale?: string | null
+          selection?: string | null
           sharp_alert?: boolean
         }
         Update: {
           ai_prob?: number
           best_odds?: number
           bookmaker?: string
+          confidence_tier?: string
+          consensus_prob?: number | null
           created_at?: string
           edge_pct?: number
           id?: string
           implied_prob?: number
           kelly_stake_pct?: number
+          market?: string
           match_id?: string
+          model_scores?: Json
           outcome?: string
+          rationale?: string | null
+          selection?: string | null
           sharp_alert?: boolean
         }
         Relationships: [
@@ -90,6 +108,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      match_results: {
+        Row: {
+          away_goals: number
+          away_team: string
+          competition: string | null
+          created_at: string
+          home_goals: number
+          home_team: string
+          id: string
+          played_at: string
+          source: string
+          sport_key: string
+        }
+        Insert: {
+          away_goals: number
+          away_team: string
+          competition?: string | null
+          created_at?: string
+          home_goals: number
+          home_team: string
+          id: string
+          played_at: string
+          source?: string
+          sport_key: string
+        }
+        Update: {
+          away_goals?: number
+          away_team?: string
+          competition?: string | null
+          created_at?: string
+          home_goals?: number
+          home_team?: string
+          id?: string
+          played_at?: string
+          source?: string
+          sport_key?: string
+        }
+        Relationships: []
       }
       matches: {
         Row: {
@@ -221,6 +278,36 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+        }
+        Relationships: []
+      }
+      team_ratings: {
+        Row: {
+          elo: number
+          id: string
+          last_match_at: string | null
+          matches_played: number
+          sport_key: string
+          team_name: string
+          updated_at: string
+        }
+        Insert: {
+          elo?: number
+          id?: string
+          last_match_at?: string | null
+          matches_played?: number
+          sport_key: string
+          team_name: string
+          updated_at?: string
+        }
+        Update: {
+          elo?: number
+          id?: string
+          last_match_at?: string | null
+          matches_played?: number
+          sport_key?: string
+          team_name?: string
+          updated_at?: string
         }
         Relationships: []
       }

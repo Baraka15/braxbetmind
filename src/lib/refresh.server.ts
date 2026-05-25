@@ -10,6 +10,14 @@ const DEFAULT_LEAGUES = [
   "soccer_spain_la_liga",
   "soccer_italy_serie_a",
   "soccer_germany_bundesliga",
+  // In-season worldwide leagues so the scanner always finds matches.
+  "soccer_usa_mls",
+  "soccer_brazil_campeonato",
+  "soccer_mexico_ligamx",
+  "soccer_norway_eliteserien",
+  "soccer_sweden_allsvenskan",
+  "soccer_japan_j_league",
+  "soccer_conmebol_copa_libertadores",
 ];
 
 const MIN_EDGE = 0.02;

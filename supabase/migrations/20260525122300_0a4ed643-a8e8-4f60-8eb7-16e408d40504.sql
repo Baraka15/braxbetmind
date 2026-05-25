@@ -1,0 +1,3 @@
+UPDATE public.user_settings SET tracked_leagues = ARRAY['soccer_epl','soccer_uefa_champs_league','soccer_spain_la_liga','soccer_italy_serie_a','soccer_germany_bundesliga','soccer_usa_mls','soccer_brazil_campeonato','soccer_mexico_ligamx','soccer_norway_eliteserien','soccer_sweden_allsvenskan','soccer_japan_j_league','soccer_conmebol_copa_libertadores'], updated_at = now();
+
+ALTER TABLE public.user_settings ALTER COLUMN tracked_leagues SET DEFAULT ARRAY['soccer_epl','soccer_uefa_champs_league','soccer_spain_la_liga','soccer_italy_serie_a','soccer_germany_bundesliga','soccer_usa_mls','soccer_brazil_campeonato','soccer_mexico_ligamx','soccer_norway_eliteserien','soccer_sweden_allsvenskan','soccer_japan_j_league','soccer_conmebol_copa_libertadores'];

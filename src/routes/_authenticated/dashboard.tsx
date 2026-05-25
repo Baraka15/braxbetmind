@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { RefreshCw, TrendingUp, AlertTriangle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — BetMind Pro" }] }),
@@ -15,10 +16,29 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type Bet = {
-  id: string; match_id: string; outcome: "home" | "draw" | "away";
+  id: string; match_id: string; outcome: string;
+  market: string; selection: string;
+  confidence_tier: "S" | "A" | "B" | "C";
+  rationale: string | null;
   best_odds: number; bookmaker: string; ai_prob: number; implied_prob: number;
   edge_pct: number; kelly_stake_pct: number; sharp_alert: boolean;
   matches: { home: string; away: string; commence_time: string; league: string | null } | null;
+};
+
+const MARKET_LABEL: Record<string, string> = {
+  h2h: "1X2", ou_1_5: "O/U 1.5", ou_2_5: "O/U 2.5", ou_3_5: "O/U 3.5",
+  btts: "BTTS", dc: "Double Chance", dnb: "Draw No Bet",
+};
+const SELECTION_LABEL: Record<string, string> = {
+  home: "Home", draw: "Draw", away: "Away",
+  over: "Over", under: "Under", yes: "Yes", no: "No",
+  "1X": "Home/Draw", "12": "Home/Away", X2: "Draw/Away",
+};
+const TIER_STYLE: Record<string, string> = {
+  S: "bg-primary text-primary-foreground",
+  A: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40",
+  B: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+  C: "bg-muted text-muted-foreground border border-border",
 };
 
 function Dashboard() {
@@ -88,7 +108,9 @@ function Dashboard() {
             <tr>
               <th className="px-3 py-2 text-left">Kickoff</th>
               <th className="px-3 py-2 text-left">Match</th>
+              <th className="px-3 py-2 text-left">Market</th>
               <th className="px-3 py-2 text-left">Pick</th>
+              <th className="px-3 py-2 text-center">Tier</th>
               <th className="px-3 py-2 text-right">Odds</th>
               <th className="px-3 py-2 text-right">AI %</th>
               <th className="px-3 py-2 text-right">Implied %</th>
@@ -99,7 +121,7 @@ function Dashboard() {
           </thead>
           <tbody>
             {(bets as Bet[]).length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-12 text-center text-muted-foreground">No value bets yet. Click <span className="font-mono-num">Refresh</span> to scan.</td></tr>
+              <tr><td colSpan={11} className="px-3 py-12 text-center text-muted-foreground">No value bets yet. Click <span className="font-mono-num">Refresh</span> to scan.</td></tr>
             )}
             {(bets as Bet[]).map((b) => (
               <tr key={b.id} className="border-t border-border">
@@ -108,7 +130,18 @@ function Dashboard() {
                   <div className="font-medium">{b.matches?.home} <span className="text-muted-foreground">vs</span> {b.matches?.away}</div>
                   <div className="text-xs text-muted-foreground">{b.matches?.league}</div>
                 </td>
-                <td className="px-3 py-2"><Badge variant="outline" className="uppercase">{b.outcome}</Badge></td>
+                <td className="px-3 py-2 text-xs text-muted-foreground">{MARKET_LABEL[b.market] ?? b.market}</td>
+                <td className="px-3 py-2"><Badge variant="outline">{SELECTION_LABEL[b.selection] ?? b.selection}</Badge></td>
+                <td className="px-3 py-2 text-center">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${TIER_STYLE[b.confidence_tier] ?? TIER_STYLE.C}`}>{b.confidence_tier}</span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">{b.rationale ?? "—"}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </td>
                 <td className="px-3 py-2 text-right font-mono-num">{b.best_odds.toFixed(2)} <span className="text-xs text-muted-foreground">{b.bookmaker}</span></td>
                 <td className="px-3 py-2 text-right font-mono-num">{(b.ai_prob * 100).toFixed(1)}%</td>
                 <td className="px-3 py-2 text-right font-mono-num text-muted-foreground">{(b.implied_prob * 100).toFixed(1)}%</td>

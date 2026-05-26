@@ -214,7 +214,15 @@ export async function runEnsemble(args: {
     }
   }
 
-  return selections;
+  // Keep only the single best-probability selection per market for this event,
+  // so the dashboard never shows the same match twice with opposite picks
+  // (e.g. "Home" and "Away" of the same 1X2 market).
+  const bestPerMarket = new Map<MarketKey, EnsembleSelection>();
+  for (const s of selections) {
+    const existing = bestPerMarket.get(s.market);
+    if (!existing || s.finalProb > existing.finalProb) bestPerMarket.set(s.market, s);
+  }
+  return [...bestPerMarket.values()];
 }
 
 function blend(L: EnsembleSelection["layers"]): number {

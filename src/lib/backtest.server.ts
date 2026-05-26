@@ -140,8 +140,9 @@ export async function runBacktest(args: { leagues?: string[]; minSampleForPick?:
 
           b.picks++; bt.picks++;
           if (hit) { b.hits++; bt.hits++; }
-          b.brier += (hit ? 1 : 0 - pickProb) ** 2;
-          bt.brier += (hit ? 1 : 0 - pickProb) ** 2;
+          const outcome = hit ? 1 : 0;
+          b.brier += (outcome - pickProb) ** 2;
+          bt.brier += (outcome - pickProb) ** 2;
 
           // Fair-odds-with-margin ROI estimate
           const odds = (1 / pickProb) * (1 - MARGIN);

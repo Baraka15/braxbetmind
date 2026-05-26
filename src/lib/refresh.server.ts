@@ -135,6 +135,16 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
   // Run the ensemble
   const selections = await runEnsemble({ event: ev, books, openingPinn: pinnOpening, currentPinn: pinnCurrent });
 
+  // Clean any prior bets for this match whose (market, selection) is no longer the chosen side.
+  const keepKeys = selections.map((s) => `${s.market}::${s.selection}`);
+  const { data: existingBets } = await supabaseAdmin
+    .from("bets").select("id, market, selection").eq("match_id", ev.id);
+  for (const b of existingBets ?? []) {
+    if (!keepKeys.includes(`${b.market}::${b.selection}`)) {
+      await supabaseAdmin.from("bets").delete().eq("id", b.id);
+    }
+  }
+
   for (const sel of selections) {
     const { edgePct, impliedProb } = edgeForOutcome(sel.finalProb, sel.bestOdds);
     if (edgePct < MIN_EDGE) {

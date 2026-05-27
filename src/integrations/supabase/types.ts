@@ -43,6 +43,7 @@ export type Database = {
       }
       bets: {
         Row: {
+          actual_result: string | null
           ai_prob: number
           best_odds: number
           bookmaker: string
@@ -57,11 +58,15 @@ export type Database = {
           match_id: string
           model_scores: Json
           outcome: string
+          pnl_units: number
           rationale: string | null
           selection: string | null
+          settled_at: string | null
           sharp_alert: boolean
+          status: string
         }
         Insert: {
+          actual_result?: string | null
           ai_prob: number
           best_odds: number
           bookmaker: string
@@ -76,11 +81,15 @@ export type Database = {
           match_id: string
           model_scores?: Json
           outcome: string
+          pnl_units?: number
           rationale?: string | null
           selection?: string | null
+          settled_at?: string | null
           sharp_alert?: boolean
+          status?: string
         }
         Update: {
+          actual_result?: string | null
           ai_prob?: number
           best_odds?: number
           bookmaker?: string
@@ -95,9 +104,12 @@ export type Database = {
           match_id?: string
           model_scores?: Json
           outcome?: string
+          pnl_units?: number
           rationale?: string | null
           selection?: string | null
+          settled_at?: string | null
           sharp_alert?: boolean
+          status?: string
         }
         Relationships: [
           {

@@ -13,6 +13,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedSettlementRouteImport } from './routes/_authenticated/settlement'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedBacktestRouteImport } from './routes/_authenticated/backtest'
@@ -36,6 +37,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedSettlementRoute = AuthenticatedSettlementRouteImport.update({
+  id: '/settlement',
+  path: '/settlement',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/backtest': typeof AuthenticatedBacktestRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/settlement': typeof AuthenticatedSettlementRoute
   '/api/public/cron/refresh': typeof ApiPublicCronRefreshRoute
 }
 export interface FileRoutesByTo {
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/backtest': typeof AuthenticatedBacktestRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/settlement': typeof AuthenticatedSettlementRoute
   '/api/public/cron/refresh': typeof ApiPublicCronRefreshRoute
 }
 export interface FileRoutesById {
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/_authenticated/backtest': typeof AuthenticatedBacktestRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/settlement': typeof AuthenticatedSettlementRoute
   '/api/public/cron/refresh': typeof ApiPublicCronRefreshRoute
 }
 export interface FileRouteTypes {
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/backtest'
     | '/dashboard'
     | '/settings'
+    | '/settlement'
     | '/api/public/cron/refresh'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
     | '/backtest'
     | '/dashboard'
     | '/settings'
+    | '/settlement'
     | '/api/public/cron/refresh'
   id:
     | '__root__'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '/_authenticated/backtest'
     | '/_authenticated/dashboard'
     | '/_authenticated/settings'
+    | '/_authenticated/settlement'
     | '/api/public/cron/refresh'
   fileRoutesById: FileRoutesById
 }
@@ -156,6 +168,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/settlement': {
+      id: '/_authenticated/settlement'
+      path: '/settlement'
+      fullPath: '/settlement'
+      preLoaderRoute: typeof AuthenticatedSettlementRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
@@ -191,12 +210,14 @@ interface AuthenticatedRouteChildren {
   AuthenticatedBacktestRoute: typeof AuthenticatedBacktestRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSettlementRoute: typeof AuthenticatedSettlementRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedBacktestRoute: AuthenticatedBacktestRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSettlementRoute: AuthenticatedSettlementRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -213,3 +234,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

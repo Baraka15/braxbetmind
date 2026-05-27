@@ -214,15 +214,16 @@ export async function runEnsemble(args: {
     }
   }
 
-  // Keep only the single best-probability selection per market for this event,
-  // so the dashboard never shows the same match twice with opposite picks
-  // (e.g. "Home" and "Away" of the same 1X2 market).
-  const bestPerMarket = new Map<MarketKey, EnsembleSelection>();
+  // ONE bet per match: pick the single selection with the highest edge across
+  // every market. This prevents the same team showing up multiple times under
+  // different markets (e.g. Home 1X2 and Home DNB and 1X DC).
+  let best: EnsembleSelection | null = null;
+  let bestEdge = -Infinity;
   for (const s of selections) {
-    const existing = bestPerMarket.get(s.market);
-    if (!existing || s.finalProb > existing.finalProb) bestPerMarket.set(s.market, s);
+    const edge = s.finalProb - 1 / s.bestOdds;
+    if (edge > bestEdge) { best = s; bestEdge = edge; }
   }
-  return [...bestPerMarket.values()];
+  return best ? [best] : [];
 }
 
 function blend(L: EnsembleSelection["layers"]): number {

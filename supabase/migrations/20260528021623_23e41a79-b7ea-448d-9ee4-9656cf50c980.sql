@@ -1,0 +1,1 @@
+DELETE FROM public.bets WHERE status = 'pending' AND (best_odds > 50 OR (market IN ('dnb','dc') AND bookmaker = 'synthetic'));

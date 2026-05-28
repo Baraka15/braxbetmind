@@ -181,17 +181,20 @@ export async function runEnsemble(args: {
   }
 
   // ===== Double Chance + DNB are derived from the same 1X2 odds basket =====
-  // We synthesise a virtual best price using parlay math on the best 1X2 odds.
+  // We synthesise a virtual best price from the fair 1X2 probabilities.
   if (bestH2H.home && bestH2H.draw && bestH2H.away && poissonFair) {
     const dcDouble = dcMarkets.find((m) => m.market === "dc")!;
     const dnbM = dcMarkets.find((m) => m.market === "dnb")!;
     const fairFor = (k: "home" | "draw" | "away") => poissonFair[k];
+    // Apply a small bookmaker margin so we don't overstate edges.
+    const MARGIN = 0.05;
+    const fairPrice = (p: number) => (1 / Math.max(0.02, p)) * (1 - MARGIN);
 
-    // Double chance: implied price = 1 / (1/odds_a + 1/odds_b) ignoring overround
+    // Double chance: fair odds = 1 / (p_a + p_b), then trimmed by margin.
     const dcPairs: { sel: string; price: number; modelProb: number }[] = [
-      { sel: "1X", price: 1 / (1 / bestH2H.home.price + 1 / bestH2H.draw.price), modelProb: dcDouble.selections["1X"] },
-      { sel: "12", price: 1 / (1 / bestH2H.home.price + 1 / bestH2H.away.price), modelProb: dcDouble.selections["12"] },
-      { sel: "X2", price: 1 / (1 / bestH2H.draw.price + 1 / bestH2H.away.price), modelProb: dcDouble.selections["X2"] },
+      { sel: "1X", price: fairPrice(fairFor("home") + fairFor("draw")), modelProb: dcDouble.selections["1X"] },
+      { sel: "12", price: fairPrice(fairFor("home") + fairFor("away")), modelProb: dcDouble.selections["12"] },
+      { sel: "X2", price: fairPrice(fairFor("draw") + fairFor("away")), modelProb: dcDouble.selections["X2"] },
     ];
     for (const p of dcPairs) {
       const layers = {
@@ -201,11 +204,13 @@ export async function runEnsemble(args: {
       selections.push({ market: "dc", selection: p.sel, bestOdds: p.price, bookmaker: "synthetic", layers, finalProb: blend(layers) });
     }
 
-    // DNB: stake refunded on draw. Effective price = odds / (1 - implied_draw_fair)
+    // DNB: stake refunded on draw. Fair payout = raw_odds * (1 - p_draw).
+    // (If you wager 1 and draw probability is p_d, expected stake at risk is
+    // (1 - p_d); payout on win is raw_odds, so effective price = raw * (1 - p_d).)
     const fairDraw = fairFor("draw");
     for (const side of ["home", "away"] as const) {
       const raw = bestH2H[side]!.price;
-      const effective = raw / Math.max(0.05, 1 - fairDraw);
+      const effective = Math.max(1.01, raw * (1 - fairDraw));
       const layers = {
         poisson: dnbM.selections[side], dixonColes: dnbM.selections[side], elo: dnbM.selections[side],
         marketConsensus: 1 / effective, sharpVsSoftDelta: 0, lineMovement: 0,

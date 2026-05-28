@@ -5,6 +5,7 @@ import { fetchFinishedMatches } from "./football-data.server";
 import { runEnsemble, type BookOdds } from "./ensemble.server";
 import { reason } from "./ai-reasoning.server";
 import { edgeForOutcome, isSharpMove, kellyStakePct } from "./value-engine.server";
+import { runSettlement } from "./settlement.server";
 
 const DEFAULT_LEAGUES = [
   "soccer_epl",
@@ -26,7 +27,16 @@ const KELLY_FRACTION = 0.5;
 const MAX_STAKE_PCT = 0.05;
 
 export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
-  const summary = { leagues: leagues.length, matches: 0, bets: 0, sharp: 0, errors: [] as string[] };
+  const summary = { leagues: leagues.length, matches: 0, bets: 0, sharp: 0, settled: 0, purged: 0, errors: [] as string[] };
+
+  // 1) Purge bogus legacy DNB/DC bets with absurd synthetic odds (>50) and any
+  //    pending bets for matches that have already kicked off and weren't
+  //    refreshed in the last 24h — settlement will handle the rest.
+  try {
+    const purgeBogus = await supabaseAdmin
+      .from("bets").delete().eq("status", "pending").gt("best_odds", 50).select("id");
+    summary.purged += purgeBogus.data?.length ?? 0;
+  } catch (e) { summary.errors.push(`purge: ${(e as Error).message}`); }
 
   for (const league of leagues) {
     // Refresh historical results for this league (feeds Elo + Dixon-Coles)
@@ -48,6 +58,12 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
       }
     }
   }
+
+  // 2) Settle any pending bets whose kickoff has passed.
+  try {
+    const s = await runSettlement();
+    summary.settled = s.settled;
+  } catch (e) { summary.errors.push(`settle: ${(e as Error).message}`); }
 
   return summary;
 }

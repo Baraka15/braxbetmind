@@ -1,6 +1,6 @@
 /** Orchestrates: fetch odds + real results → fit models → ensemble → AI tier → store bets. */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { fetchOddsForLeague, isSharpBook, type OddsApiEvent } from "./odds-api.server";
+import { fetchOddsForLeague, isSharpBook, loadCachedOddsForLeague, type OddsApiEvent } from "./odds-api.server";
 import { fetchFinishedMatches } from "./football-data.server";
 import { runEnsemble, type BookOdds } from "./ensemble.server";
 import { reason } from "./ai-reasoning.server";
@@ -28,6 +28,7 @@ const MAX_STAKE_PCT = 0.05;
 
 export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
   const summary = { leagues: leagues.length, matches: 0, bets: 0, sharp: 0, settled: 0, purged: 0, errors: [] as string[] };
+  const usedTeams = new Set<string>();
 
   // 1) Purge bogus legacy DNB/DC bets with absurd synthetic odds (>50) and any
   //    pending bets for matches that have already kicked off and weren't
@@ -43,16 +44,17 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
     try { await fetchFinishedMatches(league); } catch (e) { summary.errors.push(`results ${league}: ${(e as Error).message}`); }
 
     let events: OddsApiEvent[] = [];
-    try {
-      events = await fetchOddsForLeague(league);
-    } catch (e) {
-      summary.errors.push(`${league}: ${(e as Error).message}`);
-      continue;
+    try { events = await fetchOddsForLeague(league); }
+    catch (e) {
+      const cached = await loadCachedOddsForLeague(league);
+      events = cached;
+      summary.errors.push(`${league}: live odds unavailable, used ${cached.length} cached matches (${(e as Error).message})`);
     }
+    if (!events.length) events = await loadCachedOddsForLeague(league);
 
     for (const ev of events) {
       try {
-        await processEvent(ev, summary);
+        await processEvent(ev, summary, usedTeams);
       } catch (e) {
         summary.errors.push(`${ev.id}: ${(e as Error).message}`);
       }
@@ -65,10 +67,13 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
     summary.settled = s.settled;
   } catch (e) { summary.errors.push(`settle: ${(e as Error).message}`); }
 
+  try { summary.purged += await enforceOnePickPerTeam(); }
+  catch (e) { summary.errors.push(`dedupe: ${(e as Error).message}`); }
+
   return summary;
 }
 
-async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: number; sharp: number }) {
+async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: number; sharp: number }, usedTeams: Set<string>) {
   // Upsert match
   await supabaseAdmin.from("matches").upsert({
     id: ev.id,
@@ -98,6 +103,19 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
         if (o.name === ev.home_team) row.home = o.price;
         else if (o.name === ev.away_team) row.away = o.price;
         else if (o.name.toLowerCase() === "draw") row.draw = o.price;
+      }
+      if (row.home && row.draw && row.away) {
+        const { data: existing } = await supabaseAdmin
+          .from("odds").select("opening_home,opening_draw,opening_away")
+          .eq("match_id", ev.id).eq("bookmaker", bk.key).maybeSingle();
+        await supabaseAdmin.from("odds").upsert({
+          match_id: ev.id, bookmaker: bk.key,
+          home_odds: row.home, draw_odds: row.draw, away_odds: row.away,
+          opening_home: existing?.opening_home ?? row.home,
+          opening_draw: existing?.opening_draw ?? row.draw,
+          opening_away: existing?.opening_away ?? row.away,
+          last_update: new Date().toISOString(),
+        }, { onConflict: "match_id,bookmaker" });
       }
     }
     if (totals) {
@@ -147,6 +165,13 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
   }
 
   const sharpAlert = pinnOpening && pinnCurrent ? isSharpMove(pinnCurrent, pinnOpening) : false;
+
+  const homeKey = normalizeTeam(ev.home_team);
+  const awayKey = normalizeTeam(ev.away_team);
+  if (usedTeams.has(homeKey) || usedTeams.has(awayKey)) {
+    await supabaseAdmin.from("bets").delete().eq("match_id", ev.id).eq("status", "pending");
+    return;
+  }
 
   // Run the ensemble
   const selections = await runEnsemble({ event: ev, books, openingPinn: pinnOpening, currentPinn: pinnCurrent });
@@ -212,5 +237,34 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     }, { onConflict: "match_id,market,selection" });
     summary.bets++;
     if (sharpAlert) summary.sharp++;
+    usedTeams.add(homeKey);
+    usedTeams.add(awayKey);
   }
+}
+
+function normalizeTeam(team: string) {
+  return team.toLowerCase().replace(/\s+fc$|\bfc\b|\bcf\b|[.,]/g, "").trim();
+}
+
+async function enforceOnePickPerTeam() {
+  const { data, error } = await supabaseAdmin
+    .from("bets")
+    .select("id, match_id, edge_pct, matches!inner(home, away, commence_time)")
+    .eq("status", "pending")
+    .gt("matches.commence_time", new Date().toISOString())
+    .order("edge_pct", { ascending: false })
+    .limit(500);
+  if (error) throw new Error(error.message);
+
+  const used = new Set<string>();
+  const remove: string[] = [];
+  for (const bet of data ?? []) {
+    const match = bet.matches as unknown as { home: string; away: string };
+    const h = normalizeTeam(match.home);
+    const a = normalizeTeam(match.away);
+    if (used.has(h) || used.has(a)) remove.push(bet.id);
+    else { used.add(h); used.add(a); }
+  }
+  if (remove.length) await supabaseAdmin.from("bets").delete().in("id", remove);
+  return remove.length;
 }

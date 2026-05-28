@@ -2,6 +2,7 @@
  * The Odds API v4 integration.
  * Docs: https://the-odds-api.com/liveapi/guides/v4/
  */
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 export const SHARP_BOOKMAKERS = ["pinnacle", "betfair_ex_eu", "betfair_ex_uk", "circasports"] as const;
 
@@ -31,6 +32,22 @@ export interface OddsApiEvent {
   home_team: string;
   away_team: string;
   bookmakers: OddsApiBookmaker[];
+}
+
+interface CachedMatchRow {
+  id: string;
+  sport_key: string;
+  league: string | null;
+  home: string;
+  away: string;
+  commence_time: string;
+  odds: Array<{
+    bookmaker: string;
+    home_odds: number | null;
+    draw_odds: number | null;
+    away_odds: number | null;
+    last_update: string;
+  }> | null;
 }
 
 const BASE = "https://api.the-odds-api.com/v4";
@@ -72,6 +89,49 @@ export async function fetchOddsForLeague(sportKey: string): Promise<OddsApiEvent
     throw new Error(`Odds API error ${res.status}: ${text.slice(0, 200)}`);
   }
   return (await res.json()) as OddsApiEvent[];
+}
+
+/** Rebuild upcoming events from stored odds when the live odds quota is empty. */
+export async function loadCachedOddsForLeague(sportKey: string): Promise<OddsApiEvent[]> {
+  const { data, error } = await supabaseAdmin
+    .from("matches")
+    .select("id, sport_key, league, home, away, commence_time, odds(bookmaker, home_odds, draw_odds, away_odds, last_update)")
+    .eq("sport_key", sportKey)
+    .gt("commence_time", new Date().toISOString())
+    .order("commence_time", { ascending: true })
+    .limit(80);
+
+  if (error) throw new Error(`cached odds ${sportKey}: ${error.message}`);
+
+  return ((data ?? []) as CachedMatchRow[])
+    .map((m) => {
+      const bookmakers = (m.odds ?? [])
+        .filter((o) => o.home_odds && o.draw_odds && o.away_odds)
+        .map((o) => ({
+          key: o.bookmaker,
+          title: o.bookmaker,
+          last_update: o.last_update,
+          markets: [{
+            key: "h2h",
+            outcomes: [
+              { name: m.home, price: Number(o.home_odds) },
+              { name: "Draw", price: Number(o.draw_odds) },
+              { name: m.away, price: Number(o.away_odds) },
+            ],
+          }],
+        }));
+
+      return {
+        id: m.id,
+        sport_key: m.sport_key,
+        sport_title: m.league ?? sportKey,
+        commence_time: m.commence_time,
+        home_team: m.home,
+        away_team: m.away,
+        bookmakers,
+      } satisfies OddsApiEvent;
+    })
+    .filter((event) => event.bookmakers.length > 0);
 }
 
 /** Pick the best (highest) home/draw/away odds across the sharp books for an event. */

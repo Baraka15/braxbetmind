@@ -26,7 +26,24 @@ interface ResultRow {
 }
 
 function norm(s: string) {
-  return s.toLowerCase().replace(/\s+fc$|\bfc\b|\bcf\b|\.|,/g, "").trim();
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(fc|cf|sc|ca|cd|ec|se|af|bk|fk|if|is|aif|rb|cr|club|clube|de|da|do|del|la|the)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function sameTeam(a: string, b: string) {
+  const na = norm(a);
+  const nb = norm(b);
+  if (na === nb) return true;
+  if (na.length >= 5 && nb.length >= 5 && (na.includes(nb) || nb.includes(na))) return true;
+  const aTokens = new Set(na.split(" ").filter((t) => t.length > 2));
+  const bTokens = nb.split(" ").filter((t) => t.length > 2);
+  return bTokens.length > 0 && bTokens.some((t) => aTokens.has(t));
 }
 
 function settleSelection(
@@ -100,7 +117,7 @@ export async function runSettlement() {
       .lte("played_at", windowEnd);
 
     const result = (candidates as ResultRow[] | null)?.find(
-      (r) => norm(r.home_team) === norm(m.home) && norm(r.away_team) === norm(m.away),
+      (r) => sameTeam(r.home_team, m.home) && sameTeam(r.away_team, m.away),
     );
     if (!result) { summary.missing++; continue; }
 
@@ -110,6 +127,7 @@ export async function runSettlement() {
     await supabaseAdmin.from("bets").update({
       status, actual_result: actual, pnl_units: pnl, settled_at: new Date().toISOString(),
     }).eq("id", bet.id);
+    await supabaseAdmin.from("matches").update({ status: "played", updated_at: new Date().toISOString() }).eq("id", m.id);
 
     summary.settled++;
     if (status === "won") summary.won++;

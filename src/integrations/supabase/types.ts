@@ -327,6 +327,7 @@ export type Database = {
         Row: {
           bankroll: number
           kelly_fraction: number
+          last_telegram_alert_at: string | null
           max_daily_bets: number
           max_stake_pct: number
           min_edge: number
@@ -339,6 +340,7 @@ export type Database = {
         Insert: {
           bankroll?: number
           kelly_fraction?: number
+          last_telegram_alert_at?: string | null
           max_daily_bets?: number
           max_stake_pct?: number
           min_edge?: number
@@ -351,6 +353,7 @@ export type Database = {
         Update: {
           bankroll?: number
           kelly_fraction?: number
+          last_telegram_alert_at?: string | null
           max_daily_bets?: number
           max_stake_pct?: number
           min_edge?: number

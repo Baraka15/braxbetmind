@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { getUserSettings, updateSettings } from "@/lib/bets.functions";
+import { sendTelegramTest } from "@/lib/telegram.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,12 +27,15 @@ function SettingsPage() {
   const qc = useQueryClient();
   const fetchSettings = useServerFn(getUserSettings);
   const save = useServerFn(updateSettings);
+  const testTg = useServerFn(sendTelegramTest);
   const { data } = useQuery({ queryKey: ["settings"], queryFn: () => fetchSettings() });
 
   const [form, setForm] = useState({
     bankroll: 1000, kelly_fraction: 0.5, min_edge: 0.02,
     max_stake_pct: 0.05, max_daily_bets: 10,
     tracked_leagues: LEAGUES.slice(0, 5).map((l) => l.key),
+    telegram_chat_id: "" as string,
+    telegram_min_edge: 0.05,
   });
 
   useEffect(() => {
@@ -39,16 +43,23 @@ function SettingsPage() {
       bankroll: Number(data.bankroll), kelly_fraction: Number(data.kelly_fraction),
       min_edge: Number(data.min_edge), max_stake_pct: Number(data.max_stake_pct),
       max_daily_bets: data.max_daily_bets, tracked_leagues: data.tracked_leagues,
+      telegram_chat_id: data.telegram_chat_id ?? "",
+      telegram_min_edge: Number(data.telegram_min_edge ?? 0.05),
     });
   }, [data]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await save({ data: form });
+      await save({ data: { ...form, telegram_chat_id: form.telegram_chat_id.trim() || null } });
       toast.success("Settings saved");
       qc.invalidateQueries({ queryKey: ["settings"] });
     } catch (e) { toast.error((e as Error).message); }
+  }
+
+  async function handleTest() {
+    try { await testTg(); toast.success("Test message sent to Telegram"); }
+    catch (e) { toast.error((e as Error).message); }
   }
 
   function toggleLeague(key: string) {
@@ -85,6 +96,27 @@ function SettingsPage() {
         </div>
       </div>
       <Button type="submit">Save</Button>
+
+      <div className="space-y-3 rounded-lg border border-border p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Telegram alerts</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Message <a className="underline" href="https://t.me/userinfobot" target="_blank" rel="noreferrer">@userinfobot</a> on
+            Telegram to get your chat ID, then start a chat with your Lovable bot so it can DM you. Save below and click <span className="font-mono-num">Send test</span>.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Telegram chat ID">
+            <Input placeholder="123456789" value={form.telegram_chat_id} onChange={(e) => setForm({ ...form, telegram_chat_id: e.target.value })} />
+          </Field>
+          <Field label="Alert threshold (edge %)">
+            <Input type="number" step="0.005" min="0" max="1" value={form.telegram_min_edge} onChange={(e) => setForm({ ...form, telegram_min_edge: +e.target.value })} />
+          </Field>
+        </div>
+        <Button type="button" variant="outline" onClick={handleTest} disabled={!form.telegram_chat_id.trim()}>
+          Send test message
+        </Button>
+      </div>
     </form>
   );
 }

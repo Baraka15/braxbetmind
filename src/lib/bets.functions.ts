@@ -48,6 +48,8 @@ const settingsSchema = z.object({
   max_stake_pct: z.number().min(0).max(1),
   max_daily_bets: z.number().int().min(1).max(100),
   tracked_leagues: z.array(z.string().min(1).max(64)).max(20),
+  telegram_chat_id: z.string().max(64).optional().nullable(),
+  telegram_min_edge: z.number().min(0).max(1).optional(),
 });
 
 export const updateSettings = createServerFn({ method: "POST" })

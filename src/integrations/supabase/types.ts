@@ -330,6 +330,8 @@ export type Database = {
           max_daily_bets: number
           max_stake_pct: number
           min_edge: number
+          telegram_chat_id: string | null
+          telegram_min_edge: number
           tracked_leagues: string[]
           updated_at: string
           user_id: string
@@ -340,6 +342,8 @@ export type Database = {
           max_daily_bets?: number
           max_stake_pct?: number
           min_edge?: number
+          telegram_chat_id?: string | null
+          telegram_min_edge?: number
           tracked_leagues?: string[]
           updated_at?: string
           user_id: string
@@ -350,6 +354,8 @@ export type Database = {
           max_daily_bets?: number
           max_stake_pct?: number
           min_edge?: number
+          telegram_chat_id?: string | null
+          telegram_min_edge?: number
           tracked_leagues?: string[]
           updated_at?: string
           user_id?: string

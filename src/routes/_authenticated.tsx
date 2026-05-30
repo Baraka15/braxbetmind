@@ -3,7 +3,7 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Activity, Settings as SettingsIcon, LogOut, History, CheckSquare } from "lucide-react";
+import { Activity, Settings as SettingsIcon, LogOut, History, CheckSquare, RadioTower } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -75,6 +75,12 @@ function AuthedLayout() {
               <Link to="/backtest">
                 <History className="h-4 w-4" />
                 <span className="ml-2 hidden sm:inline">Backtest</span>
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm" aria-label="Live" title="Live in-play EV">
+              <Link to="/live">
+                <RadioTower className="h-4 w-4" />
+                <span className="ml-2 hidden sm:inline">Live</span>
               </Link>
             </Button>
             <Button asChild variant="ghost" size="sm" aria-label="Settlement" title="Settlement">

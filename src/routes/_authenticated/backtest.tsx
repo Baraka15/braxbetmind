@@ -176,7 +176,7 @@ function TableEl({ headers, children }: { headers: string[]; children: React.Rea
   );
 }
 
-type CsvBacktestResult = Awaited<ReturnType<ReturnType<typeof useServerFn<typeof runCsvBacktestFn>>>>;
+import type { CsvBacktestResult } from "@/lib/backtest-csv.server";
 
 function CsvBacktest({ runCsv }: { runCsv: ReturnType<typeof useServerFn<typeof runCsvBacktestFn>> }) {
   const inputRef = useRef<HTMLInputElement>(null);

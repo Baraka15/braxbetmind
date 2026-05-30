@@ -327,9 +327,12 @@ export type Database = {
         Row: {
           bankroll: number
           kelly_fraction: number
+          last_telegram_alert_at: string | null
           max_daily_bets: number
           max_stake_pct: number
           min_edge: number
+          telegram_chat_id: string | null
+          telegram_min_edge: number
           tracked_leagues: string[]
           updated_at: string
           user_id: string
@@ -337,9 +340,12 @@ export type Database = {
         Insert: {
           bankroll?: number
           kelly_fraction?: number
+          last_telegram_alert_at?: string | null
           max_daily_bets?: number
           max_stake_pct?: number
           min_edge?: number
+          telegram_chat_id?: string | null
+          telegram_min_edge?: number
           tracked_leagues?: string[]
           updated_at?: string
           user_id: string
@@ -347,9 +353,12 @@ export type Database = {
         Update: {
           bankroll?: number
           kelly_fraction?: number
+          last_telegram_alert_at?: string | null
           max_daily_bets?: number
           max_stake_pct?: number
           min_edge?: number
+          telegram_chat_id?: string | null
+          telegram_min_edge?: number
           tracked_leagues?: string[]
           updated_at?: string
           user_id?: string

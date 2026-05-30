@@ -3,11 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo } from "react";
 import { getBets, getUserSettings, triggerRefresh } from "@/lib/bets.functions";
+import { sendTelegramAlerts } from "@/lib/telegram.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { RefreshCw, TrendingUp, AlertTriangle } from "lucide-react";
+import { RefreshCw, AlertTriangle, Send } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -46,6 +47,7 @@ function Dashboard() {
   const fetchBets = useServerFn(getBets);
   const fetchSettings = useServerFn(getUserSettings);
   const refresh = useServerFn(triggerRefresh);
+  const sendAlerts = useServerFn(sendTelegramAlerts);
 
   const { data: bets = [] } = useQuery({ queryKey: ["bets"], queryFn: () => fetchBets(), refetchInterval: 60_000 });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => fetchSettings() });
@@ -72,6 +74,14 @@ function Dashboard() {
     } catch (e) { toast.error((e as Error).message); }
   }
 
+  async function pushAlerts() {
+    try {
+      const r = await sendAlerts({ data: { force: false } });
+      if (r.sent === 0) toast.info(`No new bets above threshold (${r.candidates} candidates).`);
+      else toast.success(`Sent ${r.sent} alert${r.sent === 1 ? "" : "s"} to Telegram.`);
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-4">
@@ -83,7 +93,10 @@ function Dashboard() {
 
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Value Bets</h2>
-        <Button size="sm" onClick={runRefresh}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={pushAlerts}><Send className="mr-2 h-4 w-4" />Telegram alerts</Button>
+          <Button size="sm" onClick={runRefresh}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
+        </div>
       </div>
 
       {sharp.length > 0 && (

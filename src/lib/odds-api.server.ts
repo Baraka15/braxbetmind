@@ -34,6 +34,17 @@ export interface OddsApiEvent {
   bookmakers: OddsApiBookmaker[];
 }
 
+export interface OddsApiScore {
+  id: string;
+  sport_key: string;
+  commence_time: string;
+  completed: boolean;
+  home_team: string;
+  away_team: string;
+  scores: Array<{ name: string; score: string }> | null;
+  last_update: string | null;
+}
+
 interface CachedMatchRow {
   id: string;
   sport_key: string;
@@ -89,6 +100,17 @@ export async function fetchOddsForLeague(sportKey: string): Promise<OddsApiEvent
     throw new Error(`Odds API error ${res.status}: ${text.slice(0, 200)}`);
   }
   return (await res.json()) as OddsApiEvent[];
+}
+
+/** Fetch live & recently-finished scores for a league (Odds API /scores endpoint).
+ *  Used by the live-betting page to compute elapsed minutes + current score. */
+export async function fetchScoresForLeague(sportKey: string, daysFrom = 1): Promise<OddsApiScore[]> {
+  const apiKey = process.env.ODDS_API_KEY;
+  if (!apiKey) throw new Error("ODDS_API_KEY is not configured");
+  const params = new URLSearchParams({ apiKey, daysFrom: String(daysFrom), dateFormat: "iso" });
+  const res = await fetchWithBackoff(`${BASE}/sports/${sportKey}/scores?${params}`);
+  if (!res.ok) throw new Error(`scores ${sportKey} ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return (await res.json()) as OddsApiScore[];
 }
 
 /** Rebuild upcoming events from stored odds when the live odds quota is empty. */

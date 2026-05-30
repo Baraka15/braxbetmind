@@ -139,9 +139,7 @@ export function runCsvBacktest(params: CsvBacktestParams): CsvBacktestResult {
     const dd = peak > 0 ? (peak - bankroll) / peak : 0;
     if (dd > maxDD) maxDD = dd;
     returns.push(pnl / Math.max(1e-9, stake));
-    brierSum += (won ? 1 : 0 - p) ** 2 + (won ? 0 : 1 - p) ** 2; // simple, dominated by pick branch
-    // Pure binary Brier vs pick (cleaner):
-    // brierSum += ((won ? 1 : 0) - p) ** 2;
+    brierSum += ((won ? 1 : 0) - p) ** 2;
 
     const bIdx = Math.min(9, Math.floor(p * 10));
     buckets[bIdx].pSum += p; buckets[bIdx].n += 1; if (won) buckets[bIdx].win += 1;
@@ -171,7 +169,7 @@ export function runCsvBacktest(params: CsvBacktestParams): CsvBacktestResult {
     totalPnlUnits: totalPnl,
     maxDrawdownPct: maxDD * 100,
     sharpe,
-    brier: out.length ? brierSum / (2 * out.length) : 0,
+    brier: out.length ? brierSum / out.length : 0,
     equityCurve: [{ idx: 0, date: rows[0]?.date ?? "start", bankroll: params.startingBankroll },
       ...out.map((r, i) => ({ idx: i + 1, date: r.date, bankroll: r.bankroll }))],
     calibration: buckets.map((b, i) => ({

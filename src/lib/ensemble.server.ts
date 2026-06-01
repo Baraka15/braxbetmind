@@ -18,14 +18,24 @@ import { deriveMarkets, type MarketKey } from "./markets.server";
 import type { OddsApiEvent } from "./odds-api.server";
 
 const WEIGHTS = {
-  poisson: 0.10,
-  dc: 0.18,
-  elo: 0.12,
-  consensus: 0.32,
-  divergence: 0.10,
-  movement: 0.06,
+  // Sharp market consensus dominates — it's the single most accurate prior we
+  // have. Stats models are nudges, not opinions.
+  poisson: 0.06,
+  dc: 0.14,
+  elo: 0.08,
+  consensus: 0.55,
+  divergence: 0.12,
+  movement: 0.05,
   // L7 (AI) acts AFTER blend via small adjustedProb override; its implicit weight is the cap.
 };
+
+/** Minimum number of bookmakers that must price an H2H market before we trust it. */
+const MIN_H2H_BOOKS = 4;
+/** Minimum number of SHARP books (Pinnacle / Betfair / 1xBet) required. */
+const MIN_SHARP_BOOKS = 1;
+/** Maximum tolerable disagreement between model and sharp consensus.
+ *  If |finalProb - sharpFair| > this, the market is regime-unstable; skip. */
+const MAX_MODEL_MARKET_DRIFT = 0.18;
 
 export interface BookOdds {
   bookmaker: string;
@@ -81,6 +91,12 @@ export async function runEnsemble(args: {
   const softs = books.filter((b) => !b.sharp && b.home && b.draw && b.away);
   const sharpFair = avgFair(sharps);
   const softFair = avgFair(softs);
+
+  // Liquidity / sharpness gate: thin markets are noise.
+  const h2hBooks = books.filter((b) => b.home && b.draw && b.away).length;
+  if (h2hBooks < MIN_H2H_BOOKS || sharps.length < MIN_SHARP_BOOKS || !sharpFair) {
+    return [];
+  }
 
   // === Dixon-Coles + Elo ===
   const dc = await fitDixonColes(event.sport_key);
@@ -181,43 +197,10 @@ export async function runEnsemble(args: {
   }
 
   // ===== Double Chance + DNB are derived from the same 1X2 odds basket =====
-  // We synthesise a virtual best price from the fair 1X2 probabilities.
-  if (bestH2H.home && bestH2H.draw && bestH2H.away && poissonFair) {
-    const dcDouble = dcMarkets.find((m) => m.market === "dc")!;
-    const dnbM = dcMarkets.find((m) => m.market === "dnb")!;
-    const fairFor = (k: "home" | "draw" | "away") => poissonFair[k];
-    // Apply a small bookmaker margin so we don't overstate edges.
-    const MARGIN = 0.05;
-    const fairPrice = (p: number) => (1 / Math.max(0.02, p)) * (1 - MARGIN);
-
-    // Double chance: fair odds = 1 / (p_a + p_b), then trimmed by margin.
-    const dcPairs: { sel: string; price: number; modelProb: number }[] = [
-      { sel: "1X", price: fairPrice(fairFor("home") + fairFor("draw")), modelProb: dcDouble.selections["1X"] },
-      { sel: "12", price: fairPrice(fairFor("home") + fairFor("away")), modelProb: dcDouble.selections["12"] },
-      { sel: "X2", price: fairPrice(fairFor("draw") + fairFor("away")), modelProb: dcDouble.selections["X2"] },
-    ];
-    for (const p of dcPairs) {
-      const layers = {
-        poisson: p.modelProb, dixonColes: p.modelProb, elo: p.modelProb,
-        marketConsensus: 1 / p.price, sharpVsSoftDelta: 0, lineMovement: 0,
-      };
-      selections.push({ market: "dc", selection: p.sel, bestOdds: p.price, bookmaker: "synthetic", layers, finalProb: blend(layers) });
-    }
-
-    // DNB: stake refunded on draw. Fair payout = raw_odds * (1 - p_draw).
-    // (If you wager 1 and draw probability is p_d, expected stake at risk is
-    // (1 - p_d); payout on win is raw_odds, so effective price = raw * (1 - p_d).)
-    const fairDraw = fairFor("draw");
-    for (const side of ["home", "away"] as const) {
-      const raw = bestH2H[side]!.price;
-      const effective = Math.max(1.01, raw * (1 - fairDraw));
-      const layers = {
-        poisson: dnbM.selections[side], dixonColes: dnbM.selections[side], elo: dnbM.selections[side],
-        marketConsensus: 1 / effective, sharpVsSoftDelta: 0, lineMovement: 0,
-      };
-      selections.push({ market: "dnb", selection: side, bestOdds: effective, bookmaker: bestH2H[side]!.book, layers, finalProb: blend(layers) });
-    }
-  }
+  // INTENTIONALLY DISABLED: synthetic DC / DNB prices from fair 1X2 created
+  // phantom edges (no real bookmaker offered them at those prices) and were
+  // the main source of losing tickets. Only price markets where a real book
+  // has posted a real number.
 
   // ONE bet per match: pick the single selection with the highest edge across
   // every market. This prevents the same team showing up multiple times under
@@ -228,7 +211,14 @@ export async function runEnsemble(args: {
     const edge = s.finalProb - 1 / s.bestOdds;
     if (edge > bestEdge) { best = s; bestEdge = edge; }
   }
-  return best ? [best] : [];
+  if (!best) return [];
+
+  // Regime-stability gate: if our final prob is wildly off the sharp market
+  // consensus, we don't actually understand this game — refuse to quote it.
+  const drift = Math.abs(best.finalProb - best.layers.marketConsensus);
+  if (drift > MAX_MODEL_MARKET_DRIFT) return [];
+
+  return [best];
 }
 
 function blend(L: EnsembleSelection["layers"]): number {

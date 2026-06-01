@@ -6,6 +6,7 @@ import { runEnsemble, type BookOdds } from "./ensemble.server";
 import { reason } from "./ai-reasoning.server";
 import { edgeForOutcome, isSharpMove, kellyStakePct } from "./value-engine.server";
 import { runSettlement } from "./settlement.server";
+import { getCalibration, calibrateProb, invalidateCalibration } from "./calibration.server";
 
 const DEFAULT_LEAGUES = [
   "soccer_epl",
@@ -68,6 +69,9 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
     const s = await runSettlement();
     summary.settled = s.settled;
   } catch (e) { summary.errors.push(`settle: ${(e as Error).message}`); }
+
+  // New settlements invalidate the calibrator — force refit on next refresh.
+  invalidateCalibration();
 
   try { summary.purged += await enforceOnePickPerTeam(); }
   catch (e) { summary.errors.push(`dedupe: ${(e as Error).message}`); }
@@ -210,7 +214,11 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
   }
 
   for (const sel of selections) {
-    const { edgePct, impliedProb } = edgeForOutcome(sel.finalProb, sel.bestOdds);
+    // Apply rolling-window Platt calibration to the ensemble probability so
+    // predicted win rates match observed outcomes over the last N settled bets.
+    const calibration = await getCalibration();
+    const calibratedProb = calibrateProb(calibration, sel.market, sel.finalProb);
+    const { edgePct, impliedProb } = edgeForOutcome(calibratedProb, sel.bestOdds);
     if (edgePct < MIN_EDGE) {
       await supabaseAdmin.from("bets").delete().eq("match_id", ev.id).eq("market", sel.market).eq("selection", sel.selection);
       continue;
@@ -219,18 +227,19 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     // L7: AI reasoning (best-effort)
     let tier: "S" | "A" | "B" | "C" = edgePct >= 0.08 ? "S" : edgePct >= 0.05 ? "A" : edgePct >= 0.03 ? "B" : "C";
     let rationale = `${(edgePct * 100).toFixed(1)}% edge vs market consensus.`;
-    let finalProb = sel.finalProb;
+    let finalProb = calibratedProb;
     try {
       const r = await reason({
         home: ev.home_team, away: ev.away_team, league: ev.sport_title,
         market: sel.market, selection: sel.selection,
         bestOdds: sel.bestOdds, bookmaker: sel.bookmaker,
-        layers: sel.layers, finalProb: sel.finalProb, edgePct,
+        layers: sel.layers, finalProb: calibratedProb, edgePct,
       });
       if (r) {
         tier = r.tier;
         rationale = r.rationale;
-        finalProb = r.adjustedProb;
+        // Re-calibrate the AI-adjusted prob so it stays on the same scale.
+        finalProb = calibrateProb(calibration, sel.market, r.adjustedProb);
       }
     } catch { /* keep defaults */ }
 
@@ -255,7 +264,7 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
       sharp_alert: sharpAlert,
       confidence_tier: tier,
       rationale,
-      model_scores: sel.layers,
+      model_scores: { ...sel.layers, rawEnsembleProb: sel.finalProb, calibratedProb },
       consensus_prob: sel.layers.marketConsensus,
     }, { onConflict: "match_id,market,selection" });
     summary.bets++;

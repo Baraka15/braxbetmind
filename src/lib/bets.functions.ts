@@ -8,13 +8,20 @@ export const getBets = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase } = context;
+    // Active dashboard rule: only show PENDING bets for matches that have NOT
+    // kicked off yet. The instant a match starts (or is settled), it disappears
+    // from the dashboard and lives only in the Settlement ledger.
+    const nowIso = new Date().toISOString();
     const { data, error } = await supabase
       .from("bets")
       .select("*, matches(id, home, away, commence_time, league, sport_key)")
+      .eq("status", "pending")
+      .gt("matches.commence_time", nowIso)
       .order("edge_pct", { ascending: false })
       .limit(100);
     if (error) throw new Error(error.message);
-    return data ?? [];
+    // PostgREST inner-join nuance: filter rows where the join produced no match.
+    return (data ?? []).filter((b: { matches: unknown }) => b.matches);
   });
 
 export const getSharpAlerts = createServerFn({ method: "GET" })

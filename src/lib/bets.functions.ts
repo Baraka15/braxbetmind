@@ -89,3 +89,40 @@ export const triggerRefresh = createServerFn({ method: "POST" })
     const leagues = settings?.tracked_leagues?.length ? settings.tracked_leagues : undefined;
     return await runRefresh(leagues);
   });
+
+/**
+ * Honest rolling accuracy: win rate of settled bets where the edge at time of
+ * placement was >= 5%. No fabricated numbers — pure read from `bets`.
+ */
+export const getAccuracyStats = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase } = context;
+    const since = new Date(Date.now() - 90 * 86_400_000).toISOString();
+    const { data, error } = await supabase
+      .from("bets")
+      .select("status, edge_pct, pnl_units, settled_at")
+      .in("status", ["won", "lost"])
+      .gte("settled_at", since)
+      .order("settled_at", { ascending: false })
+      .limit(2000);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    const edgeBucket = rows.filter((r) => Number(r.edge_pct) >= 0.05);
+    const wins = edgeBucket.filter((r) => r.status === "won").length;
+    const total = edgeBucket.length;
+    const hitRate = total > 0 ? wins / total : null;
+    const roi = total > 0
+      ? edgeBucket.reduce((s, r) => s + Number(r.pnl_units ?? 0), 0) / total
+      : null;
+    const allWins = rows.filter((r) => r.status === "won").length;
+    return {
+      windowDays: 90,
+      edgeThreshold: 0.05,
+      sampleSize: total,
+      hitRate,
+      roiPerUnit: roi,
+      overallSample: rows.length,
+      overallHitRate: rows.length ? allWins / rows.length : null,
+    };
+  });

@@ -16,13 +16,15 @@ import { expectedLambdas, fitDixonColes, scoreMatrix } from "./dixon-coles.serve
 import { eloExpected, eloTo1x2, getEloMap } from "./elo.server";
 import { deriveMarkets, type MarketKey } from "./markets.server";
 import type { OddsApiEvent } from "./odds-api.server";
+import { formProbabilities } from "./team-form.server";
 
 const WEIGHTS = {
   // Sharp market consensus dominates — it's the single most accurate prior we
   // have. Stats models are nudges, not opinions.
   poisson: 0.06,
-  dc: 0.14,
-  elo: 0.08,
+  dc: 0.13,
+  elo: 0.07,
+  form: 0.06,
   consensus: 0.55,
   divergence: 0.12,
   movement: 0.05,
@@ -56,6 +58,7 @@ export interface EnsembleSelection {
     poisson: number;
     dixonColes: number;
     elo: number;
+    formFeatures: number;
     marketConsensus: number;
     sharpVsSoftDelta: number;
     lineMovement: number;
@@ -113,6 +116,14 @@ export async function runEnsemble(args: {
   // Elo + DC also produce derived markets (over/under, BTTS from same matrix)
   const eloMatrix = elo1x2; // only h2h available directly from Elo
 
+  // === Layer 8: Form features (rolling N-game points, GF/GA, rest, H2H) ===
+  const formFair = await formProbabilities(
+    event.sport_key,
+    event.home_team,
+    event.away_team,
+    event.commence_time,
+  );
+
   // === Layer 1: Poisson (market-seeded) ===
   const poissonFair = sharpFair ?? softFair;
 
@@ -141,6 +152,7 @@ export async function runEnsemble(args: {
         poisson: poissonFair[k],
         dixonColes: dcMarkets[0].selections[k],
         elo: eloMatrix[k],
+        formFeatures: formFair?.[k] ?? poissonFair[k],
         marketConsensus: (sharpFair?.[k] ?? poissonFair[k]),
         sharpVsSoftDelta: deltaFor(k),
         lineMovement: moveFor(k),
@@ -173,6 +185,7 @@ export async function runEnsemble(args: {
         poisson: dcProb,
         dixonColes: dcProb,
         elo: dcProb, // Elo doesn't price totals; reuse DC
+        formFeatures: dcProb,
         marketConsensus: impl, // raw market line for this side
         sharpVsSoftDelta: 0,
         lineMovement: 0,
@@ -191,6 +204,7 @@ export async function runEnsemble(args: {
     const impl = 1 / best.price;
     const layers = {
       poisson: dcProb, dixonColes: dcProb, elo: dcProb,
+      formFeatures: dcProb,
       marketConsensus: impl, sharpVsSoftDelta: 0, lineMovement: 0,
     };
     selections.push({ market: "btts", selection: side, bestOdds: best.price, bookmaker: best.book, layers, finalProb: blend(layers) });
@@ -226,10 +240,11 @@ function blend(L: EnsembleSelection["layers"]): number {
     L.poisson * WEIGHTS.poisson +
     L.dixonColes * WEIGHTS.dc +
     L.elo * WEIGHTS.elo +
+    L.formFeatures * WEIGHTS.form +
     L.marketConsensus * WEIGHTS.consensus;
   // Treat divergence & movement as nudges, scaled by their weight.
   const nudge = L.sharpVsSoftDelta * WEIGHTS.divergence + L.lineMovement * WEIGHTS.movement;
-  const totalWeight = WEIGHTS.poisson + WEIGHTS.dc + WEIGHTS.elo + WEIGHTS.consensus;
+  const totalWeight = WEIGHTS.poisson + WEIGHTS.dc + WEIGHTS.elo + WEIGHTS.form + WEIGHTS.consensus;
   const blended = base / totalWeight + nudge;
   return Math.min(0.98, Math.max(0.02, blended));
 }

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo } from "react";
-import { getBets, getUserSettings, triggerRefresh } from "@/lib/bets.functions";
+import { getBets, getUserSettings, triggerRefresh, getAccuracyStats } from "@/lib/bets.functions";
 import { sendTelegramAlerts } from "@/lib/telegram.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -48,9 +48,11 @@ function Dashboard() {
   const fetchSettings = useServerFn(getUserSettings);
   const refresh = useServerFn(triggerRefresh);
   const sendAlerts = useServerFn(sendTelegramAlerts);
+  const fetchAccuracy = useServerFn(getAccuracyStats);
 
   const { data: bets = [] } = useQuery({ queryKey: ["bets"], queryFn: () => fetchBets(), refetchInterval: 60_000 });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => fetchSettings() });
+  const { data: acc } = useQuery({ queryKey: ["accuracy"], queryFn: () => fetchAccuracy(), refetchInterval: 120_000 });
 
   useEffect(() => {
     const ch = supabase.channel("bets-rt")
@@ -84,6 +86,7 @@ function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <AccuracyTicker acc={acc} />
       <div className="grid gap-4 md:grid-cols-4">
         <Stat label="Bankroll" value={`$${bankroll.toFixed(2)}`} />
         <Stat label="Open bets" value={String((bets as Bet[]).length)} />
@@ -175,6 +178,47 @@ function Stat({ label, value, positive }: { label: string; value: string; positi
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className={`mt-1 font-mono-num text-2xl font-semibold ${positive ? "text-primary" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
+type Accuracy = {
+  windowDays: number; edgeThreshold: number; sampleSize: number;
+  hitRate: number | null; roiPerUnit: number | null;
+  overallSample: number; overallHitRate: number | null;
+};
+
+function AccuracyTicker({ acc }: { acc: Accuracy | undefined }) {
+  if (!acc) return null;
+  const enough = acc.sampleSize >= 25;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+        <span className="font-medium">Live model accuracy</span>
+        <span className="text-xs text-muted-foreground">rolling {acc.windowDays}d · settled bets only</span>
+      </div>
+      <div className="flex items-center gap-6 font-mono-num">
+        <div>
+          <span className="text-xs text-muted-foreground mr-1">Hit-rate @ edge ≥ {Math.round(acc.edgeThreshold * 100)}%:</span>
+          {enough && acc.hitRate != null ? (
+            <span className="text-emerald-400">{(acc.hitRate * 100).toFixed(1)}%</span>
+          ) : (
+            <span className="text-muted-foreground">n/a</span>
+          )}
+          <span className="ml-1 text-xs text-muted-foreground">(n={acc.sampleSize})</span>
+        </div>
+        <div>
+          <span className="text-xs text-muted-foreground mr-1">ROI/unit:</span>
+          {enough && acc.roiPerUnit != null ? (
+            <span className={acc.roiPerUnit >= 0 ? "text-emerald-400" : "text-destructive"}>
+              {acc.roiPerUnit >= 0 ? "+" : ""}{(acc.roiPerUnit * 100).toFixed(2)}%
+            </span>
+          ) : (
+            <span className="text-muted-foreground">n/a</span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

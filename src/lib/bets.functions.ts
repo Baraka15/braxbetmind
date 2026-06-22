@@ -90,6 +90,29 @@ export const triggerRefresh = createServerFn({ method: "POST" })
     return await runRefresh(leagues);
   });
 
+/** Record that the user has actually placed this bet at a bookmaker. */
+export const placeBet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({
+    betId: z.string().uuid(),
+    stake: z.number().positive().max(1_000_000),
+    odds: z.number().min(1.01).max(1000),
+    note: z.string().trim().max(280).optional().nullable(),
+  }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase
+      .from("bets")
+      .update({
+        placed_at: new Date().toISOString(),
+        placed_stake: data.stake,
+        placed_odds: data.odds,
+        placement_note: data.note ?? null,
+      })
+      .eq("id", data.betId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 /**
  * Honest rolling accuracy: win rate of settled bets where the edge at time of
  * placement was >= 5%. No fabricated numbers — pure read from `bets`.

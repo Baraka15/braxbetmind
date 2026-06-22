@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_keys: {
+        Row: {
+          created_at: string
+          id: string
+          key_hash: string
+          last_used_at: string | null
+          name: string
+          prefix: string
+          rate_limit_per_min: number
+          request_count: number
+          revoked_at: string | null
+          user_id: string
+          window_start: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key_hash: string
+          last_used_at?: string | null
+          name: string
+          prefix: string
+          rate_limit_per_min?: number
+          request_count?: number
+          revoked_at?: string | null
+          user_id: string
+          window_start?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key_hash?: string
+          last_used_at?: string | null
+          name?: string
+          prefix?: string
+          rate_limit_per_min?: number
+          request_count?: number
+          revoked_at?: string | null
+          user_id?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       bankroll_history: {
         Row: {
           balance: number
@@ -58,6 +100,10 @@ export type Database = {
           match_id: string
           model_scores: Json
           outcome: string
+          placed_at: string | null
+          placed_odds: number | null
+          placed_stake: number | null
+          placement_note: string | null
           pnl_units: number
           rationale: string | null
           selection: string | null
@@ -81,6 +127,10 @@ export type Database = {
           match_id: string
           model_scores?: Json
           outcome: string
+          placed_at?: string | null
+          placed_odds?: number | null
+          placed_stake?: number | null
+          placement_note?: string | null
           pnl_units?: number
           rationale?: string | null
           selection?: string | null
@@ -104,6 +154,10 @@ export type Database = {
           match_id?: string
           model_scores?: Json
           outcome?: string
+          placed_at?: string | null
+          placed_odds?: number | null
+          placed_stake?: number | null
+          placement_note?: string | null
           pnl_units?: number
           rationale?: string | null
           selection?: string | null
@@ -370,7 +424,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      consume_api_key: {
+        Args: { _hash: string; _now?: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

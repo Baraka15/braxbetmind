@@ -73,8 +73,9 @@ function SettingsPage() {
   }
 
   return (
-    <form onSubmit={submit} className="max-w-2xl space-y-6">
+    <div className="max-w-2xl space-y-6">
       <h1 className="text-2xl font-semibold">Settings</h1>
+      <form onSubmit={submit} className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Bankroll ($)"><Input type="number" step="1" value={form.bankroll} onChange={(e) => setForm({ ...form, bankroll: +e.target.value })} /></Field>
         <Field label="Kelly fraction (0–1)"><Input type="number" step="0.05" min="0" max="1" value={form.kelly_fraction} onChange={(e) => setForm({ ...form, kelly_fraction: +e.target.value })} /></Field>
@@ -118,8 +119,9 @@ function SettingsPage() {
           Send test message
         </Button>
       </div>
+      </form>
       <ApiKeysPanel />
-    </form>
+    </div>
   );
 }
 

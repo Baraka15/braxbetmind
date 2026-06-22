@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getBets, getUserSettings, triggerRefresh, getAccuracyStats } from "@/lib/bets.functions";
 import { sendTelegramAlerts } from "@/lib/telegram.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { RefreshCw, AlertTriangle, Send } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { SharpMovesPanel } from "@/components/sharp-moves-panel";
+import { PlaceBetDialog, type PlaceableBet } from "@/components/place-bet-dialog";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — BetMind Pro" }] }),
@@ -24,6 +25,7 @@ type Bet = {
   rationale: string | null;
   best_odds: number; bookmaker: string; ai_prob: number; implied_prob: number;
   edge_pct: number; kelly_stake_pct: number; sharp_alert: boolean;
+  placed_at?: string | null;
   matches: { home: string; away: string; commence_time: string; league: string | null } | null;
 };
 
@@ -50,6 +52,7 @@ function Dashboard() {
   const refresh = useServerFn(triggerRefresh);
   const sendAlerts = useServerFn(sendTelegramAlerts);
   const fetchAccuracy = useServerFn(getAccuracyStats);
+  const [placing, setPlacing] = useState<PlaceableBet | null>(null);
 
   const { data: bets = [] } = useQuery({ queryKey: ["bets"], queryFn: () => fetchBets(), refetchInterval: 60_000 });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => fetchSettings() });
@@ -166,12 +169,19 @@ function Dashboard() {
                 <td className="px-3 py-2 text-right font-mono-num text-muted-foreground">{(b.implied_prob * 100).toFixed(1)}%</td>
                 <td className="px-3 py-2 text-right font-mono-num text-primary">+{(b.edge_pct * 100).toFixed(2)}%</td>
                 <td className="px-3 py-2 text-right font-mono-num">${(b.kelly_stake_pct * bankroll).toFixed(2)}</td>
-                <td className="px-3 py-2 text-right"><Button size="sm" variant="outline" disabled>Place</Button></td>
+                <td className="px-3 py-2 text-right">
+                  {b.placed_at ? (
+                    <span className="text-xs text-emerald-400">✓ placed</span>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setPlacing(b)}>Place</Button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <PlaceBetDialog bet={placing} bankroll={bankroll} open={!!placing} onOpenChange={(o) => !o && setPlacing(null)} />
     </div>
   );
 }

@@ -18,6 +18,9 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedLiveRouteImport } from './routes/_authenticated/live'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedBacktestRouteImport } from './routes/_authenticated/backtest'
+import { Route as ApiPublicV1SharpMovesRouteImport } from './routes/api/public/v1/sharp-moves'
+import { Route as ApiPublicV1PredictionsRouteImport } from './routes/api/public/v1/predictions'
+import { Route as ApiPublicV1PicksRouteImport } from './routes/api/public/v1/picks'
 import { Route as ApiPublicCronRefreshRouteImport } from './routes/api/public/cron/refresh'
 
 const SignupRoute = SignupRouteImport.update({
@@ -64,6 +67,21 @@ const AuthenticatedBacktestRoute = AuthenticatedBacktestRouteImport.update({
   path: '/backtest',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const ApiPublicV1SharpMovesRoute = ApiPublicV1SharpMovesRouteImport.update({
+  id: '/api/public/v1/sharp-moves',
+  path: '/api/public/v1/sharp-moves',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1PredictionsRoute = ApiPublicV1PredictionsRouteImport.update({
+  id: '/api/public/v1/predictions',
+  path: '/api/public/v1/predictions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicV1PicksRoute = ApiPublicV1PicksRouteImport.update({
+  id: '/api/public/v1/picks',
+  path: '/api/public/v1/picks',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicCronRefreshRoute = ApiPublicCronRefreshRouteImport.update({
   id: '/api/public/cron/refresh',
   path: '/api/public/cron/refresh',
@@ -80,6 +98,9 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/settlement': typeof AuthenticatedSettlementRoute
   '/api/public/cron/refresh': typeof ApiPublicCronRefreshRoute
+  '/api/public/v1/picks': typeof ApiPublicV1PicksRoute
+  '/api/public/v1/predictions': typeof ApiPublicV1PredictionsRoute
+  '/api/public/v1/sharp-moves': typeof ApiPublicV1SharpMovesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -91,6 +112,9 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/settlement': typeof AuthenticatedSettlementRoute
   '/api/public/cron/refresh': typeof ApiPublicCronRefreshRoute
+  '/api/public/v1/picks': typeof ApiPublicV1PicksRoute
+  '/api/public/v1/predictions': typeof ApiPublicV1PredictionsRoute
+  '/api/public/v1/sharp-moves': typeof ApiPublicV1SharpMovesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -104,6 +128,9 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/settlement': typeof AuthenticatedSettlementRoute
   '/api/public/cron/refresh': typeof ApiPublicCronRefreshRoute
+  '/api/public/v1/picks': typeof ApiPublicV1PicksRoute
+  '/api/public/v1/predictions': typeof ApiPublicV1PredictionsRoute
+  '/api/public/v1/sharp-moves': typeof ApiPublicV1SharpMovesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -117,6 +144,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/settlement'
     | '/api/public/cron/refresh'
+    | '/api/public/v1/picks'
+    | '/api/public/v1/predictions'
+    | '/api/public/v1/sharp-moves'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -128,6 +158,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/settlement'
     | '/api/public/cron/refresh'
+    | '/api/public/v1/picks'
+    | '/api/public/v1/predictions'
+    | '/api/public/v1/sharp-moves'
   id:
     | '__root__'
     | '/'
@@ -140,6 +173,9 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/settlement'
     | '/api/public/cron/refresh'
+    | '/api/public/v1/picks'
+    | '/api/public/v1/predictions'
+    | '/api/public/v1/sharp-moves'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -148,6 +184,9 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SignupRoute: typeof SignupRoute
   ApiPublicCronRefreshRoute: typeof ApiPublicCronRefreshRoute
+  ApiPublicV1PicksRoute: typeof ApiPublicV1PicksRoute
+  ApiPublicV1PredictionsRoute: typeof ApiPublicV1PredictionsRoute
+  ApiPublicV1SharpMovesRoute: typeof ApiPublicV1SharpMovesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -215,6 +254,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBacktestRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/api/public/v1/sharp-moves': {
+      id: '/api/public/v1/sharp-moves'
+      path: '/api/public/v1/sharp-moves'
+      fullPath: '/api/public/v1/sharp-moves'
+      preLoaderRoute: typeof ApiPublicV1SharpMovesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/predictions': {
+      id: '/api/public/v1/predictions'
+      path: '/api/public/v1/predictions'
+      fullPath: '/api/public/v1/predictions'
+      preLoaderRoute: typeof ApiPublicV1PredictionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/v1/picks': {
+      id: '/api/public/v1/picks'
+      path: '/api/public/v1/picks'
+      fullPath: '/api/public/v1/picks'
+      preLoaderRoute: typeof ApiPublicV1PicksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/cron/refresh': {
       id: '/api/public/cron/refresh'
       path: '/api/public/cron/refresh'
@@ -251,6 +311,9 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SignupRoute: SignupRoute,
   ApiPublicCronRefreshRoute: ApiPublicCronRefreshRoute,
+  ApiPublicV1PicksRoute: ApiPublicV1PicksRoute,
+  ApiPublicV1PredictionsRoute: ApiPublicV1PredictionsRoute,
+  ApiPublicV1SharpMovesRoute: ApiPublicV1SharpMovesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

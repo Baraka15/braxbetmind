@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { ApiKeysPanel } from "@/components/api-keys-panel";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — BetMind Pro" }] }),
@@ -117,6 +118,7 @@ function SettingsPage() {
           Send test message
         </Button>
       </div>
+      <ApiKeysPanel />
     </form>
   );
 }

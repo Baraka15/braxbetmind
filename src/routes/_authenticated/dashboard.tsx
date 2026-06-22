@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { RefreshCw, AlertTriangle, Send } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { SharpMovesPanel } from "@/components/sharp-moves-panel";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — BetMind Pro" }] }),
@@ -117,6 +118,8 @@ function Dashboard() {
           </div>
         </div>
       )}
+
+      <SharpMovesPanel />
 
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">

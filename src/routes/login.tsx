@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ const PIN_EMAIL = "pin-user@betmind.local";
 const PIN_PASSWORD = "betmind-pin-20233-shared-account";
 
 function LoginPage() {
-  const nav = useNavigate();
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -47,10 +46,14 @@ function LoginPage() {
         }));
       }
     }
-    setLoading(false);
-    if (error) return toast.error(error.message);
+    if (error) {
+      setLoading(false);
+      return toast.error(error.message);
+    }
     toast.success("Welcome back");
-    nav({ to: "/dashboard" });
+    // Hard navigation guarantees the new Supabase session is fully hydrated
+    // in localStorage before the _authenticated gate re-validates getUser().
+    window.location.assign("/dashboard");
   }
 
   return (

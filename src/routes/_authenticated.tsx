@@ -9,6 +9,9 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
+    // The PIN session lives in browser storage, so the server cannot validate
+    // it on a hard load of /dashboard. Let the client-side guard validate it.
+    if (typeof window === "undefined") return;
     // Strict guard: re-validate the JWT (not just a cached session) before
     // letting any child route render.
     const { data, error } = await supabase.auth.getUser();

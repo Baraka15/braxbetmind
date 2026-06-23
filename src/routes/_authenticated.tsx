@@ -7,7 +7,11 @@ import { Activity, Settings as SettingsIcon, LogOut, History, CheckSquare, Radio
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated")({
+  ssr: false,
   beforeLoad: async () => {
+    // The PIN session lives in browser storage, so the server cannot validate
+    // it on a hard load of /dashboard. Let the client-side guard validate it.
+    if (typeof window === "undefined") return;
     // Strict guard: re-validate the JWT (not just a cached session) before
     // letting any child route render.
     const { data, error } = await supabase.auth.getUser();
@@ -21,22 +25,22 @@ function AuthedLayout() {
   const nav = useNavigate();
   const [ready, setReady] = useState(false);
 
-  // Hard gate at render time: never paint protected UI without a live user.
-  // Listen for sign-out / token loss and bounce immediately.
+  // The route guard above owns initial auth validation. This listener only
+  // handles later sign-out or token loss, avoiding a second login-time race.
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (!mounted) return;
-      if (error || !data.user) {
-        nav({ to: "/login", replace: true });
-      } else {
-        setReady(true);
-      }
+    supabase.auth.getSession().then(({ data }) => {
+      if (mounted) setReady(!!data.session);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT" || !session) {
         setReady(false);
         nav({ to: "/login", replace: true });
+        return;
+      }
+      setReady(true);
+      if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        return;
       }
     });
     return () => {

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { ApiKeysPanel } from "@/components/api-keys-panel";
+import { resyncNow } from "@/lib/resync.functions";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings — BetMind Pro" }] }),
@@ -29,6 +30,8 @@ function SettingsPage() {
   const fetchSettings = useServerFn(getUserSettings);
   const save = useServerFn(updateSettings);
   const testTg = useServerFn(sendTelegramTest);
+  const resync = useServerFn(resyncNow);
+  const [resyncing, setResyncing] = useState(false);
   const { data } = useQuery({ queryKey: ["settings"], queryFn: () => fetchSettings() });
 
   const [form, setForm] = useState({
@@ -61,6 +64,23 @@ function SettingsPage() {
   async function handleTest() {
     try { await testTg(); toast.success("Test message sent to Telegram"); }
     catch (e) { toast.error((e as Error).message); }
+  }
+
+  async function handleResync() {
+    setResyncing(true);
+    const t = toast.loading("Resyncing fixtures & form…");
+    try {
+      const s = await resync();
+      toast.success(
+        `Resynced: ${s.matches} matches, ${s.bets} picks (${(s.elapsedMs / 1000).toFixed(1)}s)`,
+        { id: t },
+      );
+      qc.invalidateQueries();
+    } catch (e) {
+      toast.error((e as Error).message, { id: t });
+    } finally {
+      setResyncing(false);
+    }
   }
 
   function toggleLeague(key: string) {
@@ -120,6 +140,19 @@ function SettingsPage() {
         </Button>
       </div>
       </form>
+      <div className="space-y-3 rounded-lg border border-border p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Data sync</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Manually re-fetch Football Data results (Elo / Dixon-Coles / rolling form)
+            and rebuild today's value bets. Only fixtures kicking off within the next
+            48 hours are quoted — far-future matches are skipped.
+          </p>
+        </div>
+        <Button type="button" variant="outline" onClick={handleResync} disabled={resyncing}>
+          {resyncing ? "Resyncing…" : "Resync now"}
+        </Button>
+      </div>
       <ApiKeysPanel />
     </div>
   );

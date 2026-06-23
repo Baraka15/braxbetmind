@@ -28,6 +28,10 @@ const DEFAULT_LEAGUES = [
 const MIN_EDGE = 0.04;
 const KELLY_FRACTION = 0.5;
 const MAX_STAKE_PCT = 0.05;
+// Only quote matches kicking off within this window. Keeps the dashboard
+// focused on today/tomorrow's slate rather than fixtures a month away that
+// the odds API may surface as "upcoming".
+const MAX_HOURS_AHEAD = 48;
 
 export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
   const summary = { leagues: leagues.length, matches: 0, bets: 0, sharp: 0, settled: 0, purged: 0, errors: [] as string[] };
@@ -57,6 +61,12 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
 
     for (const ev of events) {
       try {
+        const kickoff = new Date(ev.commence_time).getTime();
+        const hoursAhead = (kickoff - Date.now()) / 3_600_000;
+        if (hoursAhead > MAX_HOURS_AHEAD || hoursAhead < -2) {
+          // Skip far-future fixtures and matches already kicked off >2h ago.
+          continue;
+        }
         await processEvent(ev, summary, usedTeams);
       } catch (e) {
         summary.errors.push(`${ev.id}: ${(e as Error).message}`);

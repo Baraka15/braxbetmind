@@ -31,7 +31,10 @@ const MAX_STAKE_PCT = 0.05;
 // Only quote matches kicking off within this window. Keeps the dashboard
 // focused on today/tomorrow's slate rather than fixtures a month away that
 // the odds API may surface as "upcoming".
-const MAX_HOURS_AHEAD = 48;
+// Daily slate horizon. The Odds API on free/low-tier plans often only
+// surfaces fixtures 3-7 days out for off-peak leagues, so 7 days keeps the
+// dashboard populated while still excluding far-future fixtures.
+const MAX_HOURS_AHEAD = 24 * 7;
 
 export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
   const summary = { leagues: leagues.length, matches: 0, bets: 0, sharp: 0, settled: 0, purged: 0, errors: [] as string[] };

@@ -12,8 +12,10 @@ export const getBets = createServerFn({ method: "GET" })
     // kicked off yet. The instant a match starts (or is settled), it disappears
     // from the dashboard and lives only in the Settlement ledger.
     const nowIso = new Date().toISOString();
-    // Daily slate only: matches kicking off within the next 48 hours.
-    const horizonIso = new Date(Date.now() + 48 * 3_600_000).toISOString();
+    // Slate horizon: next 7 days. The Odds API doesn't always surface
+    // fixtures within 48h for every league, so we widen to a week to keep
+    // the dashboard populated with real upcoming games (not month-out ones).
+    const horizonIso = new Date(Date.now() + 7 * 24 * 3_600_000).toISOString();
     const { data, error } = await supabase
       .from("bets")
       .select("*, matches(id, home, away, commence_time, league, sport_key)")

@@ -46,6 +46,23 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
     summary.purged += purgeBogus.data?.length ?? 0;
   } catch (e) { summary.errors.push(`purge: ${(e as Error).message}`); }
 
+  // Purge pending bets for matches outside the daily window (>48h ahead).
+  // These are leftovers from prior refreshes when the slate was different and
+  // would otherwise stick to the dashboard for weeks.
+  try {
+    const horizonIso = new Date(Date.now() + MAX_HOURS_AHEAD * 3_600_000).toISOString();
+    const { data: farFuture } = await supabaseAdmin
+      .from("bets")
+      .select("id, matches!inner(commence_time)")
+      .eq("status", "pending")
+      .gt("matches.commence_time", horizonIso)
+      .limit(2000);
+    if (farFuture?.length) {
+      await supabaseAdmin.from("bets").delete().in("id", farFuture.map((b) => b.id));
+      summary.purged += farFuture.length;
+    }
+  } catch (e) { summary.errors.push(`purge-far: ${(e as Error).message}`); }
+
   for (const league of leagues) {
     // Refresh historical results for this league (feeds Elo + Dixon-Coles)
     try { await fetchFinishedMatches(league); } catch (e) { summary.errors.push(`results ${league}: ${(e as Error).message}`); }

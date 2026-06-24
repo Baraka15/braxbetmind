@@ -12,11 +12,14 @@ export const getBets = createServerFn({ method: "GET" })
     // kicked off yet. The instant a match starts (or is settled), it disappears
     // from the dashboard and lives only in the Settlement ledger.
     const nowIso = new Date().toISOString();
+    // Daily slate only: matches kicking off within the next 48 hours.
+    const horizonIso = new Date(Date.now() + 48 * 3_600_000).toISOString();
     const { data, error } = await supabase
       .from("bets")
       .select("*, matches(id, home, away, commence_time, league, sport_key)")
       .eq("status", "pending")
       .gt("matches.commence_time", nowIso)
+      .lt("matches.commence_time", horizonIso)
       .order("edge_pct", { ascending: false })
       .limit(100);
     if (error) throw new Error(error.message);

@@ -1,6 +1,7 @@
 /**
  * football-data.org integration (free tier).
- * Returns finished matches for a competition so we can feed Elo + Dixon-Coles.
+ * Returns finished/upcoming matches for a competition so we can feed Elo,
+ * Dixon-Coles, form, and the fixture fallback when the odds quota is empty.
  * Free tier: 10 req/min, top European competitions only.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -33,8 +34,22 @@ interface FdMatch {
   score: { fullTime: { home: number | null; away: number | null } };
 }
 
+export interface FdFixture {
+  id: number;
+  utcDate: string;
+  status: string;
+  competition: { code: string; name: string };
+  homeTeam: { name: string };
+  awayTeam: { name: string };
+}
+
 const fetchCache = new Map<string, { at: number; data: FdMatch[] }>();
+const fixtureCache = new Map<string, { at: number; data: FdFixture[] }>();
 const TTL = 30 * 60 * 1000; // 30 min
+
+export function sportKeyForFdCompetition(code: string): string | undefined {
+  return Object.entries(FD_COMPETITION).find(([, fdCode]) => fdCode === code)?.[0];
+}
 
 export async function fetchFinishedMatches(sportKey: string): Promise<FdMatch[]> {
   const code = FD_COMPETITION[sportKey];
@@ -79,6 +94,56 @@ export async function fetchFinishedMatches(sportKey: string): Promise<FdMatch[]>
   }
 
   return matches;
+}
+
+export async function fetchUpcomingMatches(sportKey: string, daysAhead = 7): Promise<FdFixture[]> {
+  const code = FD_COMPETITION[sportKey];
+  if (!code) return [];
+  const matches = await fetchUpcomingByUrl(
+    `competition:${code}:${daysAhead}`,
+    `${FD_BASE}/competitions/${code}/matches?${dateRangeParams(daysAhead)}`,
+  );
+  return matches.filter((m) => isFutureFixture(m));
+}
+
+export async function fetchGlobalUpcomingMatches(daysAhead = 7): Promise<FdFixture[]> {
+  const matches = await fetchUpcomingByUrl(
+    `global:${daysAhead}`,
+    `${FD_BASE}/matches?${dateRangeParams(daysAhead)}`,
+  );
+  return matches.filter((m) => isFutureFixture(m) && sportKeyForFdCompetition(m.competition.code));
+}
+
+async function fetchUpcomingByUrl(cacheKey: string, url: string): Promise<FdFixture[]> {
+  const apiKey = process.env.FOOTBALL_DATA_API_KEY;
+  if (!apiKey) return [];
+
+  const cached = fixtureCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < TTL) return cached.data;
+
+  const res = await fetch(url, { headers: { "X-Auth-Token": apiKey } });
+  if (!res.ok) {
+    console.warn(`football-data fixtures ${cacheKey}: ${res.status}`);
+    return cached?.data ?? [];
+  }
+  const json = (await res.json()) as { matches: FdFixture[] };
+  const matches = json.matches ?? [];
+  fixtureCache.set(cacheKey, { at: Date.now(), data: matches });
+  return matches;
+}
+
+function dateRangeParams(daysAhead: number) {
+  const dateFrom = new Date();
+  const dateTo = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+  return new URLSearchParams({
+    dateFrom: dateFrom.toISOString().slice(0, 10),
+    dateTo: dateTo.toISOString().slice(0, 10),
+  }).toString();
+}
+
+function isFutureFixture(match: FdFixture) {
+  const kickoff = new Date(match.utcDate).getTime();
+  return kickoff > Date.now() - 30 * 60 * 1000 && ["SCHEDULED", "TIMED"].includes(match.status);
 }
 
 /** Read finished matches for a sport from our cache table — works even when API key missing. */

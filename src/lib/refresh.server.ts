@@ -1,12 +1,16 @@
 /** Orchestrates: fetch odds + real results → fit models → ensemble → AI tier → store bets. */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { fetchOddsForLeague, isSharpBook, loadCachedOddsForLeague, type OddsApiEvent } from "./odds-api.server";
-import { fetchFinishedMatches } from "./football-data.server";
+import { fetchFinishedMatches, fetchGlobalUpcomingMatches, fetchUpcomingMatches, sportKeyForFdCompetition } from "./football-data.server";
 import { runEnsemble, type BookOdds } from "./ensemble.server";
 import { reason } from "./ai-reasoning.server";
 import { edgeForOutcome, isSharpMove, kellyStakePct } from "./value-engine.server";
 import { runSettlement } from "./settlement.server";
 import { getCalibration, calibrateProb, invalidateCalibration } from "./calibration.server";
+import { expectedLambdas, fitDixonColes, scoreMatrix } from "./dixon-coles.server";
+import { deriveMarkets } from "./markets.server";
+import { eloExpected, eloTo1x2, getEloMap } from "./elo.server";
+import { formProbabilities } from "./team-form.server";
 
 const DEFAULT_LEAGUES = [
   "soccer_epl",
@@ -35,6 +39,7 @@ const MAX_STAKE_PCT = 0.05;
 // surfaces fixtures 3-7 days out for off-peak leagues, so 7 days keeps the
 // dashboard populated while still excluding far-future fixtures.
 const MAX_HOURS_AHEAD = 24 * 7;
+const FALLBACK_BOOKMAKER = "model-fixture-feed";
 
 export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
   const summary = { leagues: leagues.length, matches: 0, bets: 0, sharp: 0, settled: 0, purged: 0, errors: [] as string[] };
@@ -78,6 +83,11 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
       summary.errors.push(`${league}: live odds unavailable, used ${cached.length} cached matches (${(e as Error).message})`);
     }
     if (!events.length) events = await loadCachedOddsForLeague(league);
+    if (!events.length) {
+      const fixtures = await fetchUpcomingMatches(league, Math.ceil(MAX_HOURS_AHEAD / 24));
+      if (fixtures.length) summary.errors.push(`${league}: odds feed empty, using football fixture feed with modelled prices`);
+      events = fixtures.map((fixture) => fixtureToModelEvent(league, fixture));
+    }
 
     for (const ev of events) {
       try {
@@ -92,6 +102,29 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
         summary.errors.push(`${ev.id}: ${(e as Error).message}`);
       }
     }
+  }
+
+  if (summary.matches === 0) {
+    try {
+      const fixtures = await fetchGlobalUpcomingMatches(Math.ceil(MAX_HOURS_AHEAD / 24));
+      const events = fixtures
+        .map((fixture) => {
+          const sportKey = sportKeyForFdCompetition(fixture.competition.code);
+          return sportKey ? fixtureToModelEvent(sportKey, fixture) : null;
+        })
+        .filter((event): event is OddsApiEvent => Boolean(event));
+      if (events.length) summary.errors.push(`odds feed returned 0; global football fixture fallback found ${events.length} real matches`);
+      for (const ev of events) {
+        try {
+          const kickoff = new Date(ev.commence_time).getTime();
+          const hoursAhead = (kickoff - Date.now()) / 3_600_000;
+          if (hoursAhead > MAX_HOURS_AHEAD || hoursAhead < -2) continue;
+          await processEvent(ev, summary, usedTeams);
+        } catch (e) {
+          summary.errors.push(`${ev.id}: ${(e as Error).message}`);
+        }
+      }
+    } catch (e) { summary.errors.push(`global fixtures: ${(e as Error).message}`); }
   }
 
   // 2) Settle any pending bets whose kickoff has passed.
@@ -230,8 +263,12 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     return;
   }
 
-  // Run the ensemble
-  const selections = await runEnsemble({ event: ev, books, openingPinn: pinnOpening, currentPinn: pinnCurrent });
+  // Run the ensemble. If this event came from the fixture feed rather than a
+  // live odds feed, generate one conservative model-priced selection so real
+  // daily teams still show when the odds quota/provider returns nothing.
+  const selections = books.some((book) => book.bookmaker === FALLBACK_BOOKMAKER)
+    ? await runFixtureFallback(ev)
+    : await runEnsemble({ event: ev, books, openingPinn: pinnOpening, currentPinn: pinnCurrent });
 
   // Clean any prior bets for this match whose (market, selection) is no longer the chosen side.
   const keepKeys = selections.map((s) => `${s.market}::${s.selection}`);
@@ -302,6 +339,80 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     usedTeams.add(homeKey);
     usedTeams.add(awayKey);
   }
+}
+
+function fixtureToModelEvent(sportKey: string, fixture: {
+  id: number;
+  utcDate: string;
+  competition: { name: string };
+  homeTeam: { name: string };
+  awayTeam: { name: string };
+}): OddsApiEvent {
+  return {
+    id: `fd-upcoming-${fixture.id}`,
+    sport_key: sportKey,
+    sport_title: fixture.competition.name,
+    commence_time: fixture.utcDate,
+    home_team: fixture.homeTeam.name,
+    away_team: fixture.awayTeam.name,
+    bookmakers: [{
+      key: FALLBACK_BOOKMAKER,
+      title: "Fixture model",
+      last_update: new Date().toISOString(),
+      markets: [{ key: "h2h", outcomes: [
+        { name: fixture.homeTeam.name, price: 1.91 },
+        { name: "Draw", price: 3.35 },
+        { name: fixture.awayTeam.name, price: 3.95 },
+      ] }],
+    }],
+  };
+}
+
+async function runFixtureFallback(ev: OddsApiEvent) {
+  const dc = await fitDixonColes(ev.sport_key);
+  const { lh, la } = expectedLambdas(dc, ev.home_team, ev.away_team);
+  const dcMarkets = deriveMarkets(scoreMatrix(lh, la));
+  const h2h = dcMarkets.find((market) => market.market === "h2h")?.selections;
+  if (!h2h) return [];
+
+  const eloMap = await getEloMap(ev.sport_key);
+  const eloH = eloMap.get(ev.home_team) ?? 1500;
+  const eloA = eloMap.get(ev.away_team) ?? 1500;
+  const elo = eloTo1x2(eloExpected(eloH, eloA));
+  const form = await formProbabilities(ev.sport_key, ev.home_team, ev.away_team, ev.commence_time);
+
+  const rows = (["home", "draw", "away"] as const).map((selection) => {
+    const prob = clamp(
+      h2h[selection] * 0.44 + elo[selection] * 0.28 + (form?.[selection] ?? h2h[selection]) * 0.28,
+      0.03,
+      0.82,
+    );
+    const modelMargin = 0.985;
+    const bestOdds = Number((modelMargin / prob).toFixed(2));
+    return {
+      market: "h2h" as const,
+      selection,
+      bestOdds,
+      bookmaker: FALLBACK_BOOKMAKER,
+      layers: {
+        poisson: h2h[selection],
+        dixonColes: h2h[selection],
+        elo: elo[selection],
+        formFeatures: form?.[selection] ?? h2h[selection],
+        marketConsensus: prob,
+        sharpVsSoftDelta: 0,
+        lineMovement: 0,
+      },
+      finalProb: prob,
+    };
+  });
+
+  rows.sort((a, b) => b.finalProb - 1 / b.bestOdds - (a.finalProb - 1 / a.bestOdds));
+  return rows.slice(0, 1);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function normalizeTeam(team: string) {

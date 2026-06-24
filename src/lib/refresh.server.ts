@@ -4,7 +4,7 @@ import { fetchOddsForLeague, isSharpBook, loadCachedOddsForLeague, type OddsApiE
 import { fetchFinishedMatches, fetchGlobalUpcomingMatches, fetchUpcomingMatches, sportKeyForFdCompetition } from "./football-data.server";
 import { runEnsemble, type BookOdds } from "./ensemble.server";
 import { reason } from "./ai-reasoning.server";
-import { edgeForOutcome, isSharpMove, kellyStakePct } from "./value-engine.server";
+import { edgeForOutcome, fairProbabilities, isSharpMove, kellyStakePct } from "./value-engine.server";
 import { runSettlement } from "./settlement.server";
 import { getCalibration, calibrateProb, invalidateCalibration } from "./calibration.server";
 import { expectedLambdas, fitDixonColes, scoreMatrix } from "./dixon-coles.server";
@@ -288,7 +288,8 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
   // Run the ensemble. If this event came from the fixture feed rather than a
   // live odds feed, generate one conservative model-priced selection so real
   // daily teams still show when the odds quota/provider returns nothing.
-  const selections = isFixtureFeedEvent(ev)
+  const fixtureFallback = isFixtureFeedEvent(ev);
+  const selections = fixtureFallback
     ? await runFixtureFallback(ev)
     : await runEnsemble({ event: ev, books, openingPinn: pinnOpening, currentPinn: pinnCurrent });
 
@@ -317,7 +318,11 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     let tier: "S" | "A" | "B" | "C" = edgePct >= 0.08 ? "S" : edgePct >= 0.05 ? "A" : edgePct >= 0.03 ? "B" : "C";
     let rationale = `${(edgePct * 100).toFixed(1)}% edge vs market consensus.`;
     let finalProb = calibratedProb;
+    if (fixtureFallback) {
+      rationale = `${(finalEdge * 100).toFixed(1)}% model edge from public fixture feed, posted odds, team-strength prior, Elo, form, and Dixon-Coles.`;
+    }
     try {
+      if (fixtureFallback) throw new Error("skip-ai-for-fixture-fallback");
       const r = await reason({
         home: ev.home_team, away: ev.away_team, league: ev.sport_title,
         market: sel.market, selection: sel.selection,
@@ -402,14 +407,21 @@ async function runFixtureFallback(ev: OddsApiEvent) {
   const eloA = eloMap.get(ev.away_team) ?? 1500;
   const elo = eloTo1x2(eloExpected(eloH, eloA));
   const form = await formProbabilities(ev.sport_key, ev.home_team, ev.away_team, ev.commence_time);
+  const marketFair = postedMarketFair(ev);
+  const prior = teamStrengthPrior(ev.home_team, ev.away_team);
 
   const rows = (["home", "draw", "away"] as const).map((selection) => {
-    const prob = clamp(
-      h2h[selection] * 0.44 + elo[selection] * 0.28 + (form?.[selection] ?? h2h[selection]) * 0.28,
+    const statisticalProb = clamp(
+      h2h[selection] * 0.32 + elo[selection] * 0.2 + (form?.[selection] ?? h2h[selection]) * 0.18 + (prior?.[selection] ?? h2h[selection]) * 0.3,
       0.03,
       0.82,
     );
     const postedOdds = bestPostedH2hOdds(ev, selection);
+    const marketProb = marketFair?.[selection];
+    const maxPositiveDrift = postedOdds?.price && postedOdds.price > 8 ? 0.025 : postedOdds?.price && postedOdds.price > 4 ? 0.045 : 0.065;
+    const prob = marketProb
+      ? clamp(statisticalProb * 0.45 + marketProb * 0.55, marketProb - 0.05, marketProb + maxPositiveDrift)
+      : statisticalProb;
     const modelMargin = 0.985;
     const bestOdds = postedOdds?.price ?? Number((modelMargin / prob).toFixed(2));
     return {
@@ -422,7 +434,7 @@ async function runFixtureFallback(ev: OddsApiEvent) {
         dixonColes: h2h[selection],
         elo: elo[selection],
         formFeatures: form?.[selection] ?? h2h[selection],
-        marketConsensus: prob,
+        marketConsensus: marketProb ?? prob,
         sharpVsSoftDelta: 0,
         lineMovement: 0,
       },
@@ -450,6 +462,41 @@ function bestPostedH2hOdds(ev: OddsApiEvent, selection: "home" | "draw" | "away"
   }
   return best;
 }
+
+function postedMarketFair(ev: OddsApiEvent) {
+  const home = bestPostedH2hOdds(ev, "home")?.price;
+  const draw = bestPostedH2hOdds(ev, "draw")?.price;
+  const away = bestPostedH2hOdds(ev, "away")?.price;
+  return home && draw && away ? fairProbabilities(home, draw, away) : null;
+}
+
+function teamStrengthPrior(homeTeam: string, awayTeam: string): { home: number; draw: number; away: number } | null {
+  const home = TEAM_POWER[teamKey(homeTeam)];
+  const away = TEAM_POWER[teamKey(awayTeam)];
+  if (!home || !away) return null;
+  const homeNoDraw = home / (home + away);
+  const closeness = 1 - Math.abs(homeNoDraw - 0.5) * 2;
+  const draw = clamp(0.16 + closeness * 0.13, 0.16, 0.29);
+  return {
+    home: homeNoDraw * (1 - draw),
+    draw,
+    away: (1 - homeNoDraw) * (1 - draw),
+  };
+}
+
+function teamKey(team: string) {
+  return team.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+const TEAM_POWER: Record<string, number> = {
+  argentina: 96, france: 95, brazil: 94, england: 93, spain: 92, netherlands: 90,
+  portugal: 90, belgium: 88, germany: 88, italy: 87, uruguay: 85, croatia: 84,
+  colombia: 83, morocco: 82, switzerland: 81, usa: 80, mexico: 79, denmark: 79,
+  japan: 78, senegal: 78, austria: 77, norway: 77, serbia: 76, poland: 76,
+  south korea: 75, scotland: 74, canada: 74, ivory coast: 74, tunisia: 72,
+  australia: 72, qatar: 68, panama: 66, south africa: 66, iraq: 65, haiti: 62,
+  jordan: 61, new zealand: 60, curacao: 58, bosnia herzegovina: 73, czechia: 76,
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));

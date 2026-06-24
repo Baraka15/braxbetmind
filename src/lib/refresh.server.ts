@@ -11,6 +11,7 @@ import { expectedLambdas, fitDixonColes, scoreMatrix } from "./dixon-coles.serve
 import { deriveMarkets } from "./markets.server";
 import { eloExpected, eloTo1x2, getEloMap } from "./elo.server";
 import { formProbabilities } from "./team-form.server";
+import { fetchGlobalPublicFixtures, fetchPublicFixturesForLeague } from "./public-fixtures.server";
 
 const DEFAULT_LEAGUES = [
   "soccer_epl",
@@ -88,6 +89,10 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
       if (fixtures.length) summary.errors.push(`${league}: odds feed empty, using football fixture feed with modelled prices`);
       events = fixtures.map((fixture) => fixtureToModelEvent(league, fixture));
     }
+    if (!events.length) {
+      events = await fetchPublicFixturesForLeague(league, Math.ceil(MAX_HOURS_AHEAD / 24));
+      if (events.length) summary.errors.push(`${league}: odds/feed quota empty, using public fixture + odds fallback`);
+    }
 
     for (const ev of events) {
       try {
@@ -125,6 +130,23 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
         }
       }
     } catch (e) { summary.errors.push(`global fixtures: ${(e as Error).message}`); }
+  }
+
+  if (summary.matches === 0) {
+    try {
+      const events = await fetchGlobalPublicFixtures(Math.ceil(MAX_HOURS_AHEAD / 24));
+      if (events.length) summary.errors.push(`no-key public fixture fallback found ${events.length} real matches`);
+      for (const ev of events) {
+        try {
+          const kickoff = new Date(ev.commence_time).getTime();
+          const hoursAhead = (kickoff - Date.now()) / 3_600_000;
+          if (hoursAhead > MAX_HOURS_AHEAD || hoursAhead < -2) continue;
+          await processEvent(ev, summary, usedTeams);
+        } catch (e) {
+          summary.errors.push(`${ev.id}: ${(e as Error).message}`);
+        }
+      }
+    } catch (e) { summary.errors.push(`public fixtures: ${(e as Error).message}`); }
   }
 
   // 2) Settle any pending bets whose kickoff has passed.
@@ -266,7 +288,7 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
   // Run the ensemble. If this event came from the fixture feed rather than a
   // live odds feed, generate one conservative model-priced selection so real
   // daily teams still show when the odds quota/provider returns nothing.
-  const selections = books.some((book) => book.bookmaker === FALLBACK_BOOKMAKER)
+  const selections = isFixtureFeedEvent(ev)
     ? await runFixtureFallback(ev)
     : await runEnsemble({ event: ev, books, openingPinn: pinnOpening, currentPinn: pinnCurrent });
 
@@ -387,13 +409,14 @@ async function runFixtureFallback(ev: OddsApiEvent) {
       0.03,
       0.82,
     );
+    const postedOdds = bestPostedH2hOdds(ev, selection);
     const modelMargin = 0.985;
-    const bestOdds = Number((modelMargin / prob).toFixed(2));
+    const bestOdds = postedOdds?.price ?? Number((modelMargin / prob).toFixed(2));
     return {
       market: "h2h" as const,
       selection,
       bestOdds,
-      bookmaker: FALLBACK_BOOKMAKER,
+      bookmaker: postedOdds?.bookmaker ?? FALLBACK_BOOKMAKER,
       layers: {
         poisson: h2h[selection],
         dixonColes: h2h[selection],
@@ -409,6 +432,23 @@ async function runFixtureFallback(ev: OddsApiEvent) {
 
   rows.sort((a, b) => b.finalProb - 1 / b.bestOdds - (a.finalProb - 1 / a.bestOdds));
   return rows.slice(0, 1);
+}
+
+function isFixtureFeedEvent(ev: OddsApiEvent) {
+  return ev.id.startsWith("fd-upcoming-") || ev.id.startsWith("espn-") || ev.bookmakers.some((book) => book.key === FALLBACK_BOOKMAKER);
+}
+
+function bestPostedH2hOdds(ev: OddsApiEvent, selection: "home" | "draw" | "away") {
+  let best: { price: number; bookmaker: string } | undefined;
+  for (const book of ev.bookmakers) {
+    const h2h = book.markets.find((market) => market.key === "h2h");
+    if (!h2h) continue;
+    const targetName = selection === "home" ? ev.home_team : selection === "away" ? ev.away_team : "draw";
+    const outcome = h2h.outcomes.find((item) => item.name.toLowerCase() === targetName.toLowerCase());
+    if (!outcome?.price) continue;
+    if (!best || outcome.price > best.price) best = { price: outcome.price, bookmaker: book.key };
+  }
+  return best;
 }
 
 function clamp(value: number, min: number, max: number) {

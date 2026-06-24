@@ -1,4 +1,4 @@
-import type { OddsApiEvent } from "./odds-api.server";
+import type { OddsApiBookmaker, OddsApiEvent } from "./odds-api.server";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const FALLBACK_BOOKMAKER = "model-fixture-feed";
@@ -143,7 +143,7 @@ function mapOdds(odds: EspnOdds | undefined, homeName: string, awayName: string)
   const home = americanToDecimal(odds?.moneyline?.home?.close?.odds ?? odds?.moneyline?.home?.open?.odds);
   const away = americanToDecimal(odds?.moneyline?.away?.close?.odds ?? odds?.moneyline?.away?.open?.odds);
   const draw = americanToDecimal(odds?.drawOdds?.moneyLine);
-  const markets = [{
+  const markets: OddsApiBookmaker["markets"] = [{
     key: "h2h",
     outcomes: [
       { name: homeName, price: home ?? 1.91 },

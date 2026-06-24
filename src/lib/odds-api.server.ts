@@ -13,6 +13,7 @@ export function isSharpBook(key: string): boolean {
 export interface OddsApiOutcome {
   name: string;
   price: number;
+  point?: number;
 }
 export interface OddsApiMarket {
   key: string;

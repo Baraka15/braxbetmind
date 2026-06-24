@@ -318,9 +318,6 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     let tier: "S" | "A" | "B" | "C" = edgePct >= 0.08 ? "S" : edgePct >= 0.05 ? "A" : edgePct >= 0.03 ? "B" : "C";
     let rationale = `${(edgePct * 100).toFixed(1)}% edge vs market consensus.`;
     let finalProb = calibratedProb;
-    if (fixtureFallback) {
-      rationale = `${(finalEdge * 100).toFixed(1)}% model edge from public fixture feed, posted odds, team-strength prior, Elo, form, and Dixon-Coles.`;
-    }
     try {
       if (fixtureFallback) throw new Error("skip-ai-for-fixture-fallback");
       const r = await reason({
@@ -338,6 +335,9 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     } catch { /* keep defaults */ }
 
     const finalEdge = finalProb - 1 / sel.bestOdds;
+    if (fixtureFallback) {
+      rationale = `${(finalEdge * 100).toFixed(1)}% model edge from public fixture feed, posted odds, team-strength prior, Elo, form, and Dixon-Coles.`;
+    }
     if (finalEdge < MIN_EDGE) {
       await supabaseAdmin.from("bets").delete().eq("match_id", ev.id).eq("market", sel.market).eq("selection", sel.selection);
       continue;

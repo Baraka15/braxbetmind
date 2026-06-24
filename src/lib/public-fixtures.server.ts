@@ -48,6 +48,7 @@ interface EspnEvent {
   date: string;
   name?: string;
   competitions?: Array<{
+    odds?: EspnOdds[];
     status?: { type?: { name?: string; completed?: boolean } };
     competitors?: Array<{
       homeAway?: "home" | "away";
@@ -55,6 +56,20 @@ interface EspnEvent {
     }>;
   }>;
   league?: { name?: string };
+}
+
+interface EspnOdds {
+  provider?: { name?: string; displayName?: string };
+  drawOdds?: { moneyLine?: number };
+  moneyline?: {
+    home?: { close?: { odds?: string }; open?: { odds?: string } };
+    away?: { close?: { odds?: string }; open?: { odds?: string } };
+  };
+  total?: {
+    over?: { close?: { odds?: string; line?: string }; open?: { odds?: string; line?: string } };
+    under?: { close?: { odds?: string; line?: string }; open?: { odds?: string; line?: string } };
+  };
+  overUnder?: number;
 }
 
 interface EspnScoreboard {
@@ -112,6 +127,7 @@ function mapEspnEvent(event: EspnEvent, sportKey: string, leagueName: string, da
   const awayName = away?.displayName ?? away?.name;
   if (!homeName || !awayName) return null;
 
+  const bookmaker = mapOdds(competition?.odds?.[0], homeName, awayName);
   return {
     id: `espn-${sportKey}-${event.id}`,
     sport_key: sportKey,
@@ -119,17 +135,61 @@ function mapEspnEvent(event: EspnEvent, sportKey: string, leagueName: string, da
     commence_time: event.date,
     home_team: homeName,
     away_team: awayName,
-    bookmakers: [{
-      key: FALLBACK_BOOKMAKER,
-      title: "Fixture model",
-      last_update: new Date().toISOString(),
-      markets: [{ key: "h2h", outcomes: [
-        { name: homeName, price: 1.91 },
-        { name: "Draw", price: 3.35 },
-        { name: awayName, price: 3.95 },
-      ] }],
-    }],
+    bookmakers: [bookmaker],
   };
+}
+
+function mapOdds(odds: EspnOdds | undefined, homeName: string, awayName: string) {
+  const home = americanToDecimal(odds?.moneyline?.home?.close?.odds ?? odds?.moneyline?.home?.open?.odds);
+  const away = americanToDecimal(odds?.moneyline?.away?.close?.odds ?? odds?.moneyline?.away?.open?.odds);
+  const draw = americanToDecimal(odds?.drawOdds?.moneyLine);
+  const markets = [{
+    key: "h2h",
+    outcomes: [
+      { name: homeName, price: home ?? 1.91 },
+      { name: "Draw", price: draw ?? 3.35 },
+      { name: awayName, price: away ?? 3.95 },
+    ],
+  }];
+
+  const point = odds?.overUnder ?? parseLine(odds?.total?.over?.close?.line ?? odds?.total?.under?.close?.line);
+  const over = americanToDecimal(odds?.total?.over?.close?.odds ?? odds?.total?.over?.open?.odds);
+  const under = americanToDecimal(odds?.total?.under?.close?.odds ?? odds?.total?.under?.open?.odds);
+  if (point && over && under) {
+    markets.push({
+      key: "totals",
+      outcomes: [
+        { name: "Over", price: over, point },
+        { name: "Under", price: under, point },
+      ],
+    });
+  }
+
+  const title = odds?.provider?.displayName ?? odds?.provider?.name ?? "Fixture model";
+  return {
+    key: odds ? slugify(title) : FALLBACK_BOOKMAKER,
+    title,
+    last_update: new Date().toISOString(),
+    markets,
+  };
+}
+
+function americanToDecimal(value: string | number | undefined) {
+  if (value == null) return undefined;
+  const moneyline = typeof value === "number" ? value : Number(value.replace(/[+\s]/g, ""));
+  if (!Number.isFinite(moneyline) || moneyline === 0) return undefined;
+  const decimal = moneyline > 0 ? 1 + moneyline / 100 : 1 + 100 / Math.abs(moneyline);
+  return Number(decimal.toFixed(2));
+}
+
+function parseLine(value: string | undefined) {
+  if (!value) return undefined;
+  const parsed = Number(value.replace(/[ou]/i, ""));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function slugify(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || FALLBACK_BOOKMAKER;
 }
 
 function dateRange(daysAhead: number) {

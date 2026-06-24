@@ -493,9 +493,9 @@ const TEAM_POWER: Record<string, number> = {
   portugal: 90, belgium: 88, germany: 88, italy: 87, uruguay: 85, croatia: 84,
   colombia: 83, morocco: 82, switzerland: 81, usa: 80, mexico: 79, denmark: 79,
   japan: 78, senegal: 78, austria: 77, norway: 77, serbia: 76, poland: 76,
-  south korea: 75, scotland: 74, canada: 74, ivory coast: 74, tunisia: 72,
-  australia: 72, qatar: 68, panama: 66, south africa: 66, iraq: 65, haiti: 62,
-  jordan: 61, new zealand: 60, curacao: 58, bosnia herzegovina: 73, czechia: 76,
+  "south korea": 75, scotland: 74, canada: 74, "ivory coast": 74, tunisia: 72,
+  australia: 72, qatar: 68, panama: 66, "south africa": 66, iraq: 65, haiti: 62,
+  jordan: 61, "new zealand": 60, curacao: 58, "bosnia herzegovina": 73, czechia: 76,
 };
 
 function clamp(value: number, min: number, max: number) {

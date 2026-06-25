@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import { getBets, getUserSettings, triggerRefresh, getAccuracyStats } from "@/lib/bets.functions";
 import { sendTelegramAlerts } from "@/lib/telegram.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -148,8 +148,8 @@ function Dashboard() {
               <tr><td colSpan={11} className="px-3 py-12 text-center text-muted-foreground">No value bets yet. Click <span className="font-mono-num">Refresh</span> to scan.</td></tr>
             )}
             {(bets as Bet[]).map((b) => (
-              <>
-              <tr key={b.id} className="border-t border-border">
+              <Fragment key={b.id}>
+              <tr className="border-t border-border">
                 <td className="px-3 py-2 font-mono-num text-xs text-muted-foreground">{b.matches ? new Date(b.matches.commence_time).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                 <td className="px-3 py-2">
                   <div className="font-medium">{b.matches?.home} <span className="text-muted-foreground">vs</span> {b.matches?.away}</div>
@@ -180,7 +180,7 @@ function Dashboard() {
                   )}
                 </td>
               </tr>
-              <tr key={`${b.id}-why`} className="border-t border-border/30">
+              <tr className="border-t border-border/30">
                 <td colSpan={11} className="px-3 pb-3">
                   <ConfidenceBreakdown
                     layers={b.model_scores ?? null}
@@ -191,7 +191,7 @@ function Dashboard() {
                   />
                 </td>
               </tr>
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

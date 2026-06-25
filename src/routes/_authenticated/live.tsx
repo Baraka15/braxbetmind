@@ -19,7 +19,7 @@ function LivePage() {
   const { data, isFetching, error, dataUpdatedAt } = useQuery({
     queryKey: ["live", settings?.tracked_leagues],
     queryFn: () => fetchLive({ data: { leagues: settings?.tracked_leagues } }),
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
     refetchIntervalInBackground: true,
   });
 
@@ -35,7 +35,7 @@ function LivePage() {
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Bayesian update of the pre-match Dixon-Coles model using current score and elapsed minutes.
-            Auto-refreshes every 30s. <span className="text-emerald-400">Green</span> rows have EV ≥ 5%.
+            Auto-refreshes every 15s. <span className="text-emerald-400">Green</span> rows have EV ≥ 5%.
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground">

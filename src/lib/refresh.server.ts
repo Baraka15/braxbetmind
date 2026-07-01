@@ -104,6 +104,22 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
       if (events.length) summary.errors.push(`${league}: odds/feed quota empty, using public fixture + odds fallback`);
     }
 
+    // If every event we found is outside the daily window (e.g. all cached
+    // fixtures are for next season), pull today/tomorrow's real fixtures
+    // from ESPN's public feed so the dashboard reflects actual games.
+    const nowMs = Date.now();
+    const inWindow = events.filter((ev) => {
+      const h = (new Date(ev.commence_time).getTime() - nowMs) / 3_600_000;
+      return h >= -2 && h <= MAX_HOURS_AHEAD;
+    });
+    if (!inWindow.length) {
+      const espn = await fetchPublicFixturesForLeague(league, Math.ceil(MAX_HOURS_AHEAD / 24));
+      if (espn.length) {
+        summary.errors.push(`${league}: cached fixtures out of window, ESPN feed found ${espn.length} live-slate matches`);
+        events = espn;
+      }
+    }
+
     for (const ev of events) {
       try {
         const kickoff = new Date(ev.commence_time).getTime();

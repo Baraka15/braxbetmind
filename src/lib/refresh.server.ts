@@ -14,11 +14,12 @@ import { formProbabilities } from "./team-form.server";
 import { fetchGlobalPublicFixtures, fetchPublicFixturesForLeague } from "./public-fixtures.server";
 
 const DEFAULT_LEAGUES = [
-  "soccer_epl",
-  "soccer_uefa_champs_league",
-  "soccer_spain_la_liga",
-  "soccer_italy_serie_a",
-  "soccer_germany_bundesliga",
+  // Summer / Southern-hemisphere leagues that are actively playing.
+  // European top-flights (EPL, La Liga, Serie A, Bundesliga, UCL) are
+  // included but off-season in June-July — ESPN fixture fallback keeps
+  // them empty in that window rather than serving stale August fixtures.
+  "soccer_fifa_world_cup",
+  "soccer_fifa_club_world_cup",
   "soccer_usa_mls",
   "soccer_brazil_campeonato",
   "soccer_mexico_ligamx",
@@ -26,6 +27,15 @@ const DEFAULT_LEAGUES = [
   "soccer_sweden_allsvenskan",
   "soccer_japan_j_league",
   "soccer_conmebol_copa_libertadores",
+  "soccer_concacaf_gold_cup",
+  "soccer_usa_nwsl",
+  "soccer_ireland_premier",
+  "soccer_china_superleague",
+  "soccer_epl",
+  "soccer_uefa_champs_league",
+  "soccer_spain_la_liga",
+  "soccer_italy_serie_a",
+  "soccer_germany_bundesliga",
 ];
 
 // Institutional accuracy: only quote when our true edge is comfortable.

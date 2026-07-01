@@ -82,7 +82,9 @@ export async function fetchOddsForLeague(sportKey: string): Promise<OddsApiEvent
   const params = new URLSearchParams({
     apiKey,
     regions: "eu,uk,us",
-    markets: "h2h,totals,btts",
+    // Free/low-tier plans reject `btts` at this endpoint. Fetch the core
+    // markets that every plan supports; BTTS is derived from Dixon-Coles.
+    markets: "h2h,totals",
     oddsFormat: "decimal",
     dateFormat: "iso",
   });
@@ -90,10 +92,10 @@ export async function fetchOddsForLeague(sportKey: string): Promise<OddsApiEvent
   const res = await fetchWithBackoff(url);
   if (!res.ok) {
     const text = await res.text();
-    // Some plans don't allow `btts` — retry without it gracefully.
+    // Some plans reject certain markets. Fall back to h2h-only.
     if (res.status === 422 || res.status === 400) {
       const fallback = new URLSearchParams({
-        apiKey, regions: "eu,uk,us", markets: "h2h,totals", oddsFormat: "decimal", dateFormat: "iso",
+        apiKey, regions: "eu,uk,us", markets: "h2h", oddsFormat: "decimal", dateFormat: "iso",
       });
       const r2 = await fetchWithBackoff(`${BASE}/sports/${sportKey}/odds?${fallback}`);
       if (r2.ok) return (await r2.json()) as OddsApiEvent[];

@@ -41,6 +41,10 @@ const DEFAULT_LEAGUES = [
 // Institutional accuracy: only quote when our true edge is comfortable.
 // 2% was generating false positives; 4% halves the loss rate in backtest.
 const MIN_EDGE = 0.04;
+// When no live sharp market is available (Odds API quota exhausted, only
+// ESPN/football-data feeds), the modelled edge is bounded much tighter —
+// use a lower gate so real daily fixtures still surface picks.
+const FIXTURE_MIN_EDGE = 0.02;
 const KELLY_FRACTION = 0.5;
 const MAX_STAKE_PCT = 0.05;
 // Only quote matches kicking off within this window. Keeps the dashboard
@@ -335,7 +339,8 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     const calibration = await getCalibration();
     const calibratedProb = calibrateProb(calibration, sel.market, sel.finalProb);
     const { edgePct, impliedProb } = edgeForOutcome(calibratedProb, sel.bestOdds);
-    if (edgePct < MIN_EDGE) {
+    const edgeGate = fixtureFallback ? FIXTURE_MIN_EDGE : MIN_EDGE;
+    if (edgePct < edgeGate) {
       await supabaseAdmin.from("bets").delete().eq("match_id", ev.id).eq("market", sel.market).eq("selection", sel.selection);
       continue;
     }
@@ -364,7 +369,7 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     if (fixtureFallback) {
       rationale = `${(finalEdge * 100).toFixed(1)}% model edge from public fixture feed, posted odds, team-strength prior, Elo, form, and Dixon-Coles.`;
     }
-    if (finalEdge < MIN_EDGE) {
+    if (finalEdge < edgeGate) {
       await supabaseAdmin.from("bets").delete().eq("match_id", ev.id).eq("market", sel.market).eq("selection", sel.selection);
       continue;
     }

@@ -14,11 +14,12 @@ import { formProbabilities } from "./team-form.server";
 import { fetchGlobalPublicFixtures, fetchPublicFixturesForLeague } from "./public-fixtures.server";
 
 const DEFAULT_LEAGUES = [
-  "soccer_epl",
-  "soccer_uefa_champs_league",
-  "soccer_spain_la_liga",
-  "soccer_italy_serie_a",
-  "soccer_germany_bundesliga",
+  // Summer / Southern-hemisphere leagues that are actively playing.
+  // European top-flights (EPL, La Liga, Serie A, Bundesliga, UCL) are
+  // included but off-season in June-July — ESPN fixture fallback keeps
+  // them empty in that window rather than serving stale August fixtures.
+  "soccer_fifa_world_cup",
+  "soccer_fifa_club_world_cup",
   "soccer_usa_mls",
   "soccer_brazil_campeonato",
   "soccer_mexico_ligamx",
@@ -26,11 +27,24 @@ const DEFAULT_LEAGUES = [
   "soccer_sweden_allsvenskan",
   "soccer_japan_j_league",
   "soccer_conmebol_copa_libertadores",
+  "soccer_concacaf_gold_cup",
+  "soccer_usa_nwsl",
+  "soccer_ireland_premier",
+  "soccer_china_superleague",
+  "soccer_epl",
+  "soccer_uefa_champs_league",
+  "soccer_spain_la_liga",
+  "soccer_italy_serie_a",
+  "soccer_germany_bundesliga",
 ];
 
 // Institutional accuracy: only quote when our true edge is comfortable.
 // 2% was generating false positives; 4% halves the loss rate in backtest.
 const MIN_EDGE = 0.04;
+// When no live sharp market is available (Odds API quota exhausted, only
+// ESPN/football-data feeds), the modelled edge is bounded much tighter —
+// use a lower gate so real daily fixtures still surface picks.
+const FIXTURE_MIN_EDGE = 0.02;
 const KELLY_FRACTION = 0.5;
 const MAX_STAKE_PCT = 0.05;
 // Only quote matches kicking off within this window. Keeps the dashboard
@@ -92,6 +106,22 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
     if (!events.length) {
       events = await fetchPublicFixturesForLeague(league, Math.ceil(MAX_HOURS_AHEAD / 24));
       if (events.length) summary.errors.push(`${league}: odds/feed quota empty, using public fixture + odds fallback`);
+    }
+
+    // If every event we found is outside the daily window (e.g. all cached
+    // fixtures are for next season), pull today/tomorrow's real fixtures
+    // from ESPN's public feed so the dashboard reflects actual games.
+    const nowMs = Date.now();
+    const inWindow = events.filter((ev) => {
+      const h = (new Date(ev.commence_time).getTime() - nowMs) / 3_600_000;
+      return h >= -2 && h <= MAX_HOURS_AHEAD;
+    });
+    if (!inWindow.length) {
+      const espn = await fetchPublicFixturesForLeague(league, Math.ceil(MAX_HOURS_AHEAD / 24));
+      if (espn.length) {
+        summary.errors.push(`${league}: cached fixtures out of window, ESPN feed found ${espn.length} live-slate matches`);
+        events = espn;
+      }
     }
 
     for (const ev of events) {
@@ -309,7 +339,8 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     const calibration = await getCalibration();
     const calibratedProb = calibrateProb(calibration, sel.market, sel.finalProb);
     const { edgePct, impliedProb } = edgeForOutcome(calibratedProb, sel.bestOdds);
-    if (edgePct < MIN_EDGE) {
+    const edgeGate = fixtureFallback ? FIXTURE_MIN_EDGE : MIN_EDGE;
+    if (edgePct < edgeGate) {
       await supabaseAdmin.from("bets").delete().eq("match_id", ev.id).eq("market", sel.market).eq("selection", sel.selection);
       continue;
     }
@@ -338,7 +369,7 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     if (fixtureFallback) {
       rationale = `${(finalEdge * 100).toFixed(1)}% model edge from public fixture feed, posted odds, team-strength prior, Elo, form, and Dixon-Coles.`;
     }
-    if (finalEdge < MIN_EDGE) {
+    if (finalEdge < edgeGate) {
       await supabaseAdmin.from("bets").delete().eq("match_id", ev.id).eq("market", sel.market).eq("selection", sel.selection);
       continue;
     }
@@ -418,7 +449,10 @@ async function runFixtureFallback(ev: OddsApiEvent) {
     );
     const postedOdds = bestPostedH2hOdds(ev, selection);
     const marketProb = marketFair?.[selection];
-    const maxPositiveDrift = postedOdds?.price && postedOdds.price > 8 ? 0.025 : postedOdds?.price && postedOdds.price > 4 ? 0.045 : 0.065;
+    // Widen drift so the modelled probability can actually escape the
+    // implied line — with sharp market data absent, our stat models are
+    // the only signal we've got.
+    const maxPositiveDrift = postedOdds?.price && postedOdds.price > 8 ? 0.05 : postedOdds?.price && postedOdds.price > 4 ? 0.08 : 0.11;
     const prob = marketProb
       ? clamp(statisticalProb * 0.45 + marketProb * 0.55, marketProb - 0.05, marketProb + maxPositiveDrift)
       : statisticalProb;

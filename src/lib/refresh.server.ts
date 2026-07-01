@@ -449,7 +449,10 @@ async function runFixtureFallback(ev: OddsApiEvent) {
     );
     const postedOdds = bestPostedH2hOdds(ev, selection);
     const marketProb = marketFair?.[selection];
-    const maxPositiveDrift = postedOdds?.price && postedOdds.price > 8 ? 0.025 : postedOdds?.price && postedOdds.price > 4 ? 0.045 : 0.065;
+    // Widen drift so the modelled probability can actually escape the
+    // implied line — with sharp market data absent, our stat models are
+    // the only signal we've got.
+    const maxPositiveDrift = postedOdds?.price && postedOdds.price > 8 ? 0.05 : postedOdds?.price && postedOdds.price > 4 ? 0.08 : 0.11;
     const prob = marketProb
       ? clamp(statisticalProb * 0.45 + marketProb * 0.55, marketProb - 0.05, marketProb + maxPositiveDrift)
       : statisticalProb;

@@ -162,10 +162,13 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
     } catch (e) { summary.errors.push(`global fixtures: ${(e as Error).message}`); }
   }
 
-  if (summary.matches === 0) {
+  // Always fold in the free global public-fixture cascade (ESPN full soccer
+  // catalogue + TheSportsDB). Dedupe by kickoff+teams so we don't double-quote
+  // the same match already priced by the Odds API pipeline.
+  {
     try {
       const events = await fetchGlobalPublicFixtures(Math.ceil(MAX_HOURS_AHEAD / 24));
-      if (events.length) summary.errors.push(`no-key public fixture fallback found ${events.length} real matches`);
+      if (events.length) summary.errors.push(`global public fixture cascade contributed ${events.length} candidate matches`);
       for (const ev of events) {
         try {
           const kickoff = new Date(ev.commence_time).getTime();
@@ -176,7 +179,7 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
           summary.errors.push(`${ev.id}: ${(e as Error).message}`);
         }
       }
-    } catch (e) { summary.errors.push(`public fixtures: ${(e as Error).message}`); }
+    } catch (e) { summary.errors.push(`global public fixtures: ${(e as Error).message}`); }
   }
 
   // 2) Settle any pending bets whose kickoff has passed.

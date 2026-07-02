@@ -1,6 +1,7 @@
 /** Orchestrates: fetch odds + real results → fit models → ensemble → AI tier → store bets. */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { fetchOddsForLeague, isSharpBook, loadCachedOddsForLeague, type OddsApiEvent } from "./odds-api.server";
+import { fetchOddsForLeague, loadCachedOddsForLeague, type OddsApiEvent } from "./odds-api.server";
+import { normalizeEventBooks, type NormalizedBook } from "./market-normalize.server";
 import { fetchFinishedMatches, fetchGlobalUpcomingMatches, fetchUpcomingMatches, sportKeyForFdCompetition } from "./football-data.server";
 import { runEnsemble, type BookOdds } from "./ensemble.server";
 import { reason } from "./ai-reasoning.server";
@@ -233,78 +234,43 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
   summary.matches++;
 
   // Build normalized BookOdds list for the ensemble
-  const books: BookOdds[] = [];
+  // One canonical normalizer handles every feed shape: The Odds API, ESPN,
+  // TheSportsDB, football-data, cached rows. All downstream math (ensemble,
+  // edge, Kelly, sharp-move) reads from `books`, never from raw feed fields.
+  const normalized: NormalizedBook[] = normalizeEventBooks(ev);
+  const books: BookOdds[] = normalized.map((n) => ({
+    bookmaker: n.bookmaker,
+    sharp: n.sharp,
+    home: n.h2h?.home,
+    draw: n.h2h?.draw,
+    away: n.h2h?.away,
+    totals: n.totals,
+    btts: n.btts,
+  }));
+
   let pinnOpening: { home?: number; draw?: number; away?: number } | undefined;
   let pinnCurrent: { home?: number; draw?: number; away?: number } | undefined;
 
-  for (const bk of ev.bookmakers) {
-    const h2h = bk.markets.find((m) => m.key === "h2h");
-    const totals = bk.markets.find((m) => m.key === "totals");
-    const btts = bk.markets.find((m) => m.key === "btts");
-    const row: BookOdds = { bookmaker: bk.key, sharp: isSharpBook(bk.key) };
+  for (const n of normalized) {
+    if (!n.h2h) continue;
+    const { data: existing } = await supabaseAdmin
+      .from("odds").select("opening_home,opening_draw,opening_away")
+      .eq("match_id", ev.id).eq("bookmaker", n.bookmaker).maybeSingle();
+    await supabaseAdmin.from("odds").upsert({
+      match_id: ev.id, bookmaker: n.bookmaker,
+      home_odds: n.h2h.home, draw_odds: n.h2h.draw, away_odds: n.h2h.away,
+      opening_home: existing?.opening_home ?? n.h2h.home,
+      opening_draw: existing?.opening_draw ?? n.h2h.draw,
+      opening_away: existing?.opening_away ?? n.h2h.away,
+      last_update: new Date().toISOString(),
+    }, { onConflict: "match_id,bookmaker" });
 
-    if (h2h) {
-      for (const o of h2h.outcomes) {
-        if (o.name === ev.home_team) row.home = o.price;
-        else if (o.name === ev.away_team) row.away = o.price;
-        else if (o.name.toLowerCase() === "draw") row.draw = o.price;
-      }
-      if (row.home && row.draw && row.away) {
-        const { data: existing } = await supabaseAdmin
-          .from("odds").select("opening_home,opening_draw,opening_away")
-          .eq("match_id", ev.id).eq("bookmaker", bk.key).maybeSingle();
-        await supabaseAdmin.from("odds").upsert({
-          match_id: ev.id, bookmaker: bk.key,
-          home_odds: row.home, draw_odds: row.draw, away_odds: row.away,
-          opening_home: existing?.opening_home ?? row.home,
-          opening_draw: existing?.opening_draw ?? row.draw,
-          opening_away: existing?.opening_away ?? row.away,
-          last_update: new Date().toISOString(),
-        }, { onConflict: "match_id,bookmaker" });
-      }
-    }
-    if (totals) {
-      // outcomes come as { name: "Over", price, point }
-      const byPoint = new Map<number, { over?: number; under?: number }>();
-      for (const o of totals.outcomes as Array<{ name: string; price: number; point?: number }>) {
-        if (o.point == null) continue;
-        const slot = byPoint.get(o.point) ?? {};
-        if (o.name === "Over") slot.over = o.price;
-        if (o.name === "Under") slot.under = o.price;
-        byPoint.set(o.point, slot);
-      }
-      row.totals = [...byPoint.entries()]
-        .filter(([, v]) => v.over && v.under)
-        .map(([point, v]) => ({ point, over: v.over!, under: v.under! }));
-    }
-    if (btts) {
-      let yes, no;
-      for (const o of btts.outcomes) {
-        if (o.name.toLowerCase() === "yes") yes = o.price;
-        if (o.name.toLowerCase() === "no") no = o.price;
-      }
-      if (yes && no) row.btts = { yes, no };
-    }
-    books.push(row);
-
-    // Track Pinnacle opening for sharp-move detection (1X2 only)
-    if (bk.key === "pinnacle" && row.home && row.draw && row.away) {
-      const { data: existing } = await supabaseAdmin
-        .from("odds").select("opening_home,opening_draw,opening_away")
-        .eq("match_id", ev.id).eq("bookmaker", "pinnacle").maybeSingle();
-      await supabaseAdmin.from("odds").upsert({
-        match_id: ev.id, bookmaker: "pinnacle",
-        home_odds: row.home, draw_odds: row.draw, away_odds: row.away,
-        opening_home: existing?.opening_home ?? row.home,
-        opening_draw: existing?.opening_draw ?? row.draw,
-        opening_away: existing?.opening_away ?? row.away,
-        last_update: new Date().toISOString(),
-      }, { onConflict: "match_id,bookmaker" });
-      pinnCurrent = { home: row.home, draw: row.draw, away: row.away };
+    if (n.bookmaker === "pinnacle") {
+      pinnCurrent = { home: n.h2h.home, draw: n.h2h.draw, away: n.h2h.away };
       pinnOpening = {
-        home: existing?.opening_home ?? row.home,
-        draw: existing?.opening_draw ?? row.draw,
-        away: existing?.opening_away ?? row.away,
+        home: existing?.opening_home ?? n.h2h.home,
+        draw: existing?.opening_draw ?? n.h2h.draw,
+        away: existing?.opening_away ?? n.h2h.away,
       };
     }
   }
@@ -498,14 +464,14 @@ function isFixtureFeedEvent(ev: OddsApiEvent) {
 }
 
 function bestPostedH2hOdds(ev: OddsApiEvent, selection: "home" | "draw" | "away") {
+  // Uses the same canonical normalizer as the ensemble so team-name variants
+  // (accents, "FC" suffix, case) don't silently drop a book.
+  const rows = normalizeEventBooks(ev);
   let best: { price: number; bookmaker: string } | undefined;
-  for (const book of ev.bookmakers) {
-    const h2h = book.markets.find((market) => market.key === "h2h");
-    if (!h2h) continue;
-    const targetName = selection === "home" ? ev.home_team : selection === "away" ? ev.away_team : "draw";
-    const outcome = h2h.outcomes.find((item) => item.name.toLowerCase() === targetName.toLowerCase());
-    if (!outcome?.price) continue;
-    if (!best || outcome.price > best.price) best = { price: outcome.price, bookmaker: book.key };
+  for (const n of rows) {
+    const price = n.h2h?.[selection];
+    if (!price) continue;
+    if (!best || price > best.price) best = { price, bookmaker: n.bookmaker };
   }
   return best;
 }

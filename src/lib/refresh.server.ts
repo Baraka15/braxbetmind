@@ -392,7 +392,17 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
       sharp_alert: sharpAlert,
       confidence_tier: tier,
       rationale,
-      model_scores: { ...sel.layers, rawEnsembleProb: sel.finalProb, calibratedProb },
+      model_scores: {
+        ...sel.layers,
+        rawEnsembleProb: sel.finalProb,
+        calibratedProb,
+        calibration: {
+          method: (calibration.perMarket[sel.market] ?? calibration.global).method,
+          n: (calibration.perMarket[sel.market] ?? calibration.global).n,
+          brierRaw: (calibration.perMarket[sel.market] ?? calibration.global).brierRaw,
+          brierCal: (calibration.perMarket[sel.market] ?? calibration.global).brierCal,
+        },
+      },
       consensus_prob: sel.layers.marketConsensus,
     }, { onConflict: "match_id,market,selection" });
     summary.bets++;

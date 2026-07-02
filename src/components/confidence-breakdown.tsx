@@ -11,6 +11,12 @@ type Layers = {
   lineMovement?: number;
   rawEnsembleProb?: number;
   calibratedProb?: number;
+  calibration?: {
+    method?: "platt" | "isotonic" | "identity";
+    n?: number;
+    brierRaw?: number;
+    brierCal?: number;
+  };
 };
 
 // Layer weights kept in sync with ensemble.server.ts. If those change, mirror here.
@@ -73,6 +79,11 @@ export function ConfidenceBreakdown({
   const raw = Number(layers.rawEnsembleProb ?? aiProb);
   const cal = Number(layers.calibratedProb ?? aiProb);
   const calDelta = cal - raw;
+  const calib = layers.calibration;
+  const brierGain =
+    calib && Number.isFinite(calib.brierRaw) && Number.isFinite(calib.brierCal)
+      ? (calib.brierRaw as number) - (calib.brierCal as number)
+      : null;
 
   return (
     <>
@@ -100,6 +111,29 @@ export function ConfidenceBreakdown({
             <span>Edge: <span className="text-primary">+{(edgePct * 100).toFixed(2)}%</span></span>
             <span>Kelly: <span className="text-foreground">{(kellyPct * 100).toFixed(2)}%</span> bankroll</span>
           </div>
+          {calib && (
+            <div className="mb-3 rounded border border-border/40 bg-background/40 px-2 py-1.5 text-[11px] text-muted-foreground">
+              <span className="font-medium text-foreground">Calibration:</span>{" "}
+              <span className="uppercase tracking-wide">{calib.method ?? "identity"}</span>
+              {typeof calib.n === "number" && (
+                <span className="ml-2">fit on <span className="font-mono-num text-foreground">{calib.n}</span> settled bets</span>
+              )}
+              {brierGain !== null && (
+                <span className="ml-2">
+                  Brier{" "}
+                  <span className="font-mono-num">{(calib.brierRaw as number).toFixed(3)}</span>
+                  {" → "}
+                  <span className="font-mono-num text-foreground">{(calib.brierCal as number).toFixed(3)}</span>
+                  <span className={brierGain > 0 ? "ml-1 text-emerald-400" : "ml-1 text-amber-400"}>
+                    ({brierGain > 0 ? "−" : "+"}{Math.abs(brierGain).toFixed(3)})
+                  </span>
+                </span>
+              )}
+              {calib.method === "identity" && (
+                <span className="ml-2 italic">— not enough settled bets yet; probabilities pass through unchanged.</span>
+              )}
+            </div>
+          )}
           <div className="space-y-1.5">
             {rows.map((r) => {
               const isNudge = r.key === "sharpVsSoftDelta" || r.key === "lineMovement";

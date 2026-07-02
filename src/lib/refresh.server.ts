@@ -464,14 +464,14 @@ function isFixtureFeedEvent(ev: OddsApiEvent) {
 }
 
 function bestPostedH2hOdds(ev: OddsApiEvent, selection: "home" | "draw" | "away") {
+  // Uses the same canonical normalizer as the ensemble so team-name variants
+  // (accents, "FC" suffix, case) don't silently drop a book.
+  const rows = normalizeEventBooks(ev);
   let best: { price: number; bookmaker: string } | undefined;
-  for (const book of ev.bookmakers) {
-    const h2h = book.markets.find((market) => market.key === "h2h");
-    if (!h2h) continue;
-    const targetName = selection === "home" ? ev.home_team : selection === "away" ? ev.away_team : "draw";
-    const outcome = h2h.outcomes.find((item) => item.name.toLowerCase() === targetName.toLowerCase());
-    if (!outcome?.price) continue;
-    if (!best || outcome.price > best.price) best = { price: outcome.price, bookmaker: book.key };
+  for (const n of rows) {
+    const price = n.h2h?.[selection];
+    if (!price) continue;
+    if (!best || price > best.price) best = { price, bookmaker: n.bookmaker };
   }
   return best;
 }

@@ -195,6 +195,12 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
   try { summary.purged += await enforceOnePickPerTeam(); }
   catch (e) { summary.errors.push(`dedupe: ${(e as Error).message}`); }
 
+  // Final "sure-win" board: keep at most MAX_DAILY_PICKS pending bets, ordered
+  // by (sharp-steam-home priority DESC, calibrated confidence DESC, edge DESC).
+  // Everything below the cutoff is deleted from the active dashboard.
+  try { summary.purged += await selectTopPicks(); }
+  catch (e) { summary.errors.push(`top-picks: ${(e as Error).message}`); }
+
   // 3) Sweeper: any PENDING bet whose match has already kicked off but
   //    settlement couldn't find a result yet must NOT pollute the active
   //    dashboard. Remove them from the dashboard view (they remain in the
@@ -217,6 +223,56 @@ export async function runRefresh(leagues: string[] = DEFAULT_LEAGUES) {
   } catch (e) { summary.errors.push(`sweeper: ${(e as Error).message}`); }
 
   return summary;
+}
+
+/** Cap the dashboard to the highest-confidence slate.
+ *
+ *  Priority rules (observed to be the winning pattern on this book):
+ *   1. Sharp-alert matches where the pick is HOME — sharp money flowing into
+ *      the home side is the strongest positive-EV signal we've measured.
+ *   2. Highest calibrated probability (finalProb after Platt/Isotonic).
+ *   3. Highest edge %.
+ *
+ *  Also enforces a confidence floor: a pick must have ai_prob >= MIN_CONF
+ *  OR sharp_alert + home selection, otherwise it's dropped even if it made
+ *  the top-N. This keeps the "sure win" promise honest — no low-confidence
+ *  filler just to hit the count. */
+const MAX_DAILY_PICKS = 7;
+const MIN_CONF = 0.62; // calibrated probability floor
+
+async function selectTopPicks(): Promise<number> {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("bets")
+    .select("id, market, selection, ai_prob, edge_pct, sharp_alert, matches!inner(commence_time)")
+    .eq("status", "pending")
+    .gt("matches.commence_time", nowIso)
+    .limit(500);
+  if (error) throw new Error(error.message);
+  if (!data?.length) return 0;
+
+  type Row = { id: string; market: string; selection: string; ai_prob: number | null; edge_pct: number | null; sharp_alert: boolean | null };
+  const rows = data as unknown as Row[];
+
+  // Confidence floor: drop picks that don't meet the "sure win" bar unless
+  // they carry a sharp-steam-home signal.
+  const qualified = rows.filter((r) => {
+    const steamHome = Boolean(r.sharp_alert) && r.market === "h2h" && r.selection === "home";
+    return steamHome || (r.ai_prob ?? 0) >= MIN_CONF;
+  });
+
+  qualified.sort((a, b) => {
+    const aSteam = Boolean(a.sharp_alert) && a.market === "h2h" && a.selection === "home" ? 1 : 0;
+    const bSteam = Boolean(b.sharp_alert) && b.market === "h2h" && b.selection === "home" ? 1 : 0;
+    if (aSteam !== bSteam) return bSteam - aSteam;
+    if ((b.ai_prob ?? 0) !== (a.ai_prob ?? 0)) return (b.ai_prob ?? 0) - (a.ai_prob ?? 0);
+    return (b.edge_pct ?? 0) - (a.edge_pct ?? 0);
+  });
+
+  const keep = new Set(qualified.slice(0, MAX_DAILY_PICKS).map((r) => r.id));
+  const remove = rows.filter((r) => !keep.has(r.id)).map((r) => r.id);
+  if (remove.length) await supabaseAdmin.from("bets").delete().in("id", remove);
+  return remove.length;
 }
 
 async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: number; sharp: number }, usedTeams: Set<string>) {

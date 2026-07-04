@@ -205,7 +205,73 @@ export async function fetchGlobalPublicFixtures(daysAhead = 7): Promise<OddsApiE
   );
   const sportsDbEvents = sportsDbBatches.flat();
 
-  return dedupeEvents([...espnEvents, ...sportsDbEvents]);
+  // 3) OpenLigaDB — completely free, no key. German-speaking + European leagues.
+  const openLigaEvents = await fetchOpenLigaDbFixtures(daysAhead);
+
+  return dedupeEvents([...espnEvents, ...sportsDbEvents, ...openLigaEvents]);
+}
+
+/** OpenLigaDB — free public JSON API for Bundesliga, 2. Bundesliga, DFB Pokal,
+ *  Champions League, Europa League and more. No API key required. */
+const OPENLIGA_LEAGUES: Array<{ shortcut: string; season: string; sportKey: string; title: string }> = [
+  { shortcut: "bl1", season: new Date().getFullYear().toString(), sportKey: "soccer_germany_bundesliga", title: "Bundesliga" },
+  { shortcut: "bl2", season: new Date().getFullYear().toString(), sportKey: "soccer_germany_bundesliga2", title: "2. Bundesliga" },
+  { shortcut: "bl3", season: new Date().getFullYear().toString(), sportKey: "soccer_germany_liga3", title: "3. Liga" },
+  { shortcut: "dfb", season: new Date().getFullYear().toString(), sportKey: "soccer_germany_dfb_pokal", title: "DFB Pokal" },
+  { shortcut: "ucl", season: new Date().getFullYear().toString(), sportKey: "soccer_uefa_champs_league", title: "UEFA Champions League" },
+  { shortcut: "uel", season: new Date().getFullYear().toString(), sportKey: "soccer_uefa_europa_league", title: "UEFA Europa League" },
+];
+
+interface OpenLigaMatch {
+  matchID: number;
+  matchDateTimeUTC: string;
+  team1?: { teamName?: string };
+  team2?: { teamName?: string };
+  leagueName?: string;
+  matchIsFinished?: boolean;
+}
+
+async function fetchOpenLigaDbFixtures(daysAhead: number): Promise<OddsApiEvent[]> {
+  const results = await runWithConcurrency(OPENLIGA_LEAGUES, 4, async (lg) => {
+    try {
+      const res = await fetch(`https://api.openligadb.de/getmatchdata/${lg.shortcut}/${lg.season}`);
+      if (!res.ok) return [] as OddsApiEvent[];
+      const rows = (await res.json()) as OpenLigaMatch[];
+      const horizon = Date.now() + daysAhead * 86_400_000;
+      const out: OddsApiEvent[] = [];
+      for (const m of rows) {
+        if (m.matchIsFinished) continue;
+        const ts = Date.parse(m.matchDateTimeUTC);
+        if (!Number.isFinite(ts) || ts < Date.now() - 2 * 3_600_000 || ts > horizon) continue;
+        const home = m.team1?.teamName;
+        const away = m.team2?.teamName;
+        if (!home || !away) continue;
+        out.push({
+          id: `openliga-${lg.shortcut}-${m.matchID}`,
+          sport_key: lg.sportKey,
+          sport_title: m.leagueName ?? lg.title,
+          commence_time: new Date(ts).toISOString(),
+          home_team: home,
+          away_team: away,
+          bookmakers: [{
+            key: FALLBACK_BOOKMAKER,
+            title: "Fixture model",
+            last_update: new Date().toISOString(),
+            markets: [{ key: "h2h", outcomes: [
+              { name: home, price: 1.91 },
+              { name: "Draw", price: 3.35 },
+              { name: away, price: 3.95 },
+            ] }],
+          }],
+        });
+      }
+      return out;
+    } catch (error) {
+      console.warn(`openliga ${lg.shortcut}:`, (error as Error).message);
+      return [] as OddsApiEvent[];
+    }
+  });
+  return results.flat();
 }
 
 async function runWithConcurrency<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {

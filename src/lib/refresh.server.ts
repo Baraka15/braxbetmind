@@ -13,6 +13,8 @@ import { deriveMarkets } from "./markets.server";
 import { eloExpected, eloTo1x2, getEloMap } from "./elo.server";
 import { formProbabilities } from "./team-form.server";
 import { fetchGlobalPublicFixtures, fetchPublicFixturesForLeague } from "./public-fixtures.server";
+import { adaptiveGamma, sharpen } from "./sharpening.server";
+import { averageSoftPrices, detectSteam, type SteamHit } from "./steam.server";
 
 const DEFAULT_LEAGUES = [
   // Summer / Southern-hemisphere leagues that are actively playing.

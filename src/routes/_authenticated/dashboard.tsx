@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState, Fragment } from "react";
 import { getBets, getUserSettings, triggerRefresh, getAccuracyStats } from "@/lib/bets.functions";
+import { getPerformanceMetrics, getSteamSignals } from "@/lib/metrics.functions";
 import { sendTelegramAlerts } from "@/lib/telegram.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -54,11 +55,15 @@ function Dashboard() {
   const refresh = useServerFn(triggerRefresh);
   const sendAlerts = useServerFn(sendTelegramAlerts);
   const fetchAccuracy = useServerFn(getAccuracyStats);
+  const fetchMetrics = useServerFn(getPerformanceMetrics);
+  const fetchSteam = useServerFn(getSteamSignals);
   const [placing, setPlacing] = useState<PlaceableBet | null>(null);
 
   const { data: bets = [] } = useQuery({ queryKey: ["bets"], queryFn: () => fetchBets(), refetchInterval: 60_000 });
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => fetchSettings() });
   const { data: acc } = useQuery({ queryKey: ["accuracy"], queryFn: () => fetchAccuracy(), refetchInterval: 120_000 });
+  const { data: metrics } = useQuery({ queryKey: ["metrics-30"], queryFn: () => fetchMetrics({ data: { windowDays: 30 } }), refetchInterval: 300_000 });
+  const { data: steam = [] } = useQuery({ queryKey: ["steam"], queryFn: () => fetchSteam(), refetchInterval: 120_000 });
 
   useEffect(() => {
     const ch = supabase.channel("bets-rt")
@@ -93,6 +98,7 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <AccuracyTicker acc={acc} />
+      <PerformanceCard metrics={metrics} />
       <div className="grid gap-4 md:grid-cols-4">
         <Stat label="Bankroll" value={`$${bankroll.toFixed(2)}`} />
         <Stat label="Open bets" value={String((bets as Bet[]).length)} />
@@ -125,6 +131,7 @@ function Dashboard() {
       )}
 
       <SharpMovesPanel />
+      <SteamPanel signals={steam as SteamRow[]} />
 
       <div className="overflow-hidden rounded-lg border border-border">
         <table className="w-full text-sm">

@@ -95,10 +95,28 @@ export const getSteamSignals = createServerFn({ method: "GET" })
     const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
     const { data, error } = await context.supabase
       .from("steam_signals")
-      .select("*, matches:match_id(home, away, league, commence_time)")
+      .select("*")
       .gte("detected_at", since)
       .order("detected_at", { ascending: false })
       .limit(30);
     if (error) throw new Error(error.message);
-    return data ?? [];
+    const rows = data ?? [];
+    const matchIds = [...new Set(rows.map((r) => r.match_id))];
+    if (!matchIds.length) return rows.map((r) => ({ ...r, matches: null }));
+    const { data: matches } = await context.supabase
+      .from("matches")
+      .select("id, home, away, league, commence_time")
+      .in("id", matchIds);
+    const byId = new Map((matches ?? []).map((m) => [m.id, m]));
+    return rows.map((r) => ({
+      ...r,
+      matches: byId.get(r.match_id)
+        ? {
+            home: byId.get(r.match_id)!.home,
+            away: byId.get(r.match_id)!.away,
+            league: byId.get(r.match_id)!.league,
+            commence_time: byId.get(r.match_id)!.commence_time,
+          }
+        : null,
+    }));
   });

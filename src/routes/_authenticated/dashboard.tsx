@@ -217,6 +217,74 @@ function Stat({ label, value, positive }: { label: string; value: string; positi
   );
 }
 
+type MarketMetrics = {
+  n_bets: number; n_won: number; hit_rate: number; roi_pct: number;
+  brier: number; log_loss: number; ece: number; avg_clv_pct: number | null;
+};
+type MetricsResp = { windowDays: number; overall: MarketMetrics; byMarket: Record<string, MarketMetrics> };
+
+function PerformanceCard({ metrics }: { metrics: MetricsResp | undefined }) {
+  if (!metrics || metrics.overall.n_bets === 0) return null;
+  const o = metrics.overall;
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm font-semibold">Model performance (settled, last {metrics.windowDays}d)</div>
+        <div className="text-xs text-muted-foreground">n={o.n_bets}</div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-6 font-mono-num text-sm">
+        <Metric label="Hit rate" value={`${(o.hit_rate * 100).toFixed(1)}%`} tone={o.hit_rate >= 0.55 ? "pos" : "neu"} />
+        <Metric label="ROI/unit" value={`${o.roi_pct >= 0 ? "+" : ""}${(o.roi_pct * 100).toFixed(2)}%`} tone={o.roi_pct >= 0 ? "pos" : "neg"} />
+        <Metric label="Brier" value={o.brier.toFixed(4)} tone={o.brier < 0.22 ? "pos" : "neu"} />
+        <Metric label="Log-loss" value={o.log_loss.toFixed(4)} tone="neu" />
+        <Metric label="ECE" value={o.ece.toFixed(3)} tone={o.ece < 0.05 ? "pos" : "neu"} />
+        <Metric label="Avg CLV" value={o.avg_clv_pct == null ? "n/a" : `${o.avg_clv_pct >= 0 ? "+" : ""}${(o.avg_clv_pct * 100).toFixed(2)}%`} tone={(o.avg_clv_pct ?? 0) > 0 ? "pos" : "neg"} />
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value, tone }: { label: string; value: string; tone: "pos" | "neg" | "neu" }) {
+  const cls = tone === "pos" ? "text-emerald-400" : tone === "neg" ? "text-destructive" : "text-foreground";
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={`mt-0.5 ${cls}`}>{value}</div>
+    </div>
+  );
+}
+
+type SteamRow = {
+  id: string; match_id: string; market: string; selection: string;
+  sharp_move_pct: number; soft_move_pct: number; divergence: number;
+  sharp_fair_prob: number; detected_at: string;
+  matches: { home: string; away: string; league: string | null; commence_time: string } | null;
+};
+
+function SteamPanel({ signals }: { signals: SteamRow[] }) {
+  if (!signals.length) return null;
+  return (
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-300">
+        <AlertTriangle className="h-4 w-4" /> Steam signals — sharps leading soft books ({signals.length})
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        {signals.slice(0, 8).map((s) => (
+          <div key={s.id} className="rounded border border-amber-500/30 bg-card p-3 text-sm">
+            <div className="font-medium">
+              {s.matches ? `${s.matches.home} vs ${s.matches.away}` : s.match_id}
+              <span className="ml-2 text-xs text-muted-foreground">{s.matches?.league}</span>
+            </div>
+            <div className="font-mono-num text-xs text-muted-foreground">
+              {s.selection.toUpperCase()} · sharp {(s.sharp_move_pct * 100).toFixed(1)}% vs soft {(s.soft_move_pct * 100).toFixed(1)}% · Δ {(s.divergence * 100).toFixed(1)}% · fair {(s.sharp_fair_prob * 100).toFixed(0)}%
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type Accuracy = {
   windowDays: number; edgeThreshold: number; sampleSize: number;
   hitRate: number | null; roiPerUnit: number | null;

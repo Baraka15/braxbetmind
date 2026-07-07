@@ -89,7 +89,7 @@ export async function runSettlement() {
   // Pending bets for matches that have already kicked off.
   const { data: pending, error } = await supabaseAdmin
     .from("bets")
-    .select("id, match_id, market, selection, best_odds, matches!inner(id, home, away, commence_time, sport_key)")
+    .select("id, match_id, market, selection, best_odds, opening_pinn_price, matches!inner(id, home, away, commence_time, sport_key)")
     .eq("status", "pending")
     .lt("matches.commence_time", new Date().toISOString())
     .limit(500);
@@ -124,8 +124,37 @@ export async function runSettlement() {
     const { status, actual } = settleSelection(bet.market, bet.selection ?? "", result.home_goals, result.away_goals);
     const pnl = status === "won" ? Number(bet.best_odds) - 1 : status === "lost" ? -1 : 0;
 
+    // Closing Line Value: pull the LAST Pinnacle price we captured before kickoff
+    // and compare to the price we took. CLV% = (taken - closing) / closing on
+    // decimal odds (positive = we beat the close, negative = market moved past us).
+    let closingPinn: number | null = null;
+    let clvPct: number | null = null;
+    try {
+      const { data: odds } = await supabaseAdmin
+        .from("odds")
+        .select("home_odds, draw_odds, away_odds")
+        .eq("match_id", bet.match_id)
+        .eq("bookmaker", "pinnacle")
+        .maybeSingle();
+      if (odds) {
+        const key = bet.selection === "home" ? "home_odds"
+          : bet.selection === "draw" ? "draw_odds"
+          : bet.selection === "away" ? "away_odds" : null;
+        if (key) {
+          const c = Number((odds as Record<string, unknown>)[key]);
+          if (Number.isFinite(c) && c > 1) {
+            closingPinn = c;
+            clvPct = (Number(bet.best_odds) - c) / c;
+          }
+        }
+      }
+    } catch { /* CLV is best-effort */ }
+
     await supabaseAdmin.from("bets").update({
-      status, actual_result: actual, pnl_units: pnl, settled_at: new Date().toISOString(),
+      status, actual_result: actual, pnl_units: pnl,
+      settled_at: new Date().toISOString(),
+      closing_pinn_price: closingPinn,
+      clv_pct: clvPct,
     }).eq("id", bet.id);
     await supabaseAdmin.from("matches").update({ status: "played", updated_at: new Date().toISOString() }).eq("id", m.id);
 

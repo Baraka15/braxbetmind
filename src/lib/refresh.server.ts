@@ -308,6 +308,7 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
 
   let pinnOpening: { home?: number; draw?: number; away?: number } | undefined;
   let pinnCurrent: { home?: number; draw?: number; away?: number } | undefined;
+  const openingByBook = new Map<string, { home?: number; draw?: number; away?: number }>();
 
   for (const n of normalized) {
     if (!n.h2h) continue;
@@ -322,6 +323,11 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
       opening_away: existing?.opening_away ?? n.h2h.away,
       last_update: new Date().toISOString(),
     }, { onConflict: "match_id,bookmaker" });
+    openingByBook.set(n.bookmaker, {
+      home: existing?.opening_home ?? n.h2h.home,
+      draw: existing?.opening_draw ?? n.h2h.draw,
+      away: existing?.opening_away ?? n.h2h.away,
+    });
 
     if (n.bookmaker === "pinnacle") {
       pinnCurrent = { home: n.h2h.home, draw: n.h2h.draw, away: n.h2h.away };
@@ -334,6 +340,19 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
   }
 
   const sharpAlert = pinnOpening && pinnCurrent ? isSharpMove(pinnCurrent, pinnOpening) : false;
+
+  // Steam scanner: sharps moving one way while soft books haven't followed.
+  // This is the "sharp move + home" pattern the user asked us to formalize.
+  const { softOpening, softCurrent } = averageSoftPrices(books, openingByBook);
+  let steamHits: SteamHit[] = [];
+  try {
+    steamHits = await detectSteam({
+      matchId: ev.id, market: "h2h",
+      openingPinn: pinnOpening, currentPinn: pinnCurrent,
+      softOpening, softCurrent,
+    });
+  } catch (e) { console.warn("steam detect:", (e as Error).message); }
+  const steamBySide = new Map(steamHits.map((h) => [h.selection, h] as const));
 
   const homeKey = normalizeTeam(ev.home_team);
   const awayKey = normalizeTeam(ev.away_team);

@@ -89,6 +89,8 @@ export type Database = {
           ai_prob: number
           best_odds: number
           bookmaker: string
+          closing_pinn_price: number | null
+          clv_pct: number | null
           confidence_tier: string
           consensus_prob: number | null
           created_at: string
@@ -99,6 +101,7 @@ export type Database = {
           market: string
           match_id: string
           model_scores: Json
+          opening_pinn_price: number | null
           outcome: string
           placed_at: string | null
           placed_odds: number | null
@@ -109,13 +112,17 @@ export type Database = {
           selection: string | null
           settled_at: string | null
           sharp_alert: boolean
+          sharpened_prob: number | null
           status: string
+          steam_flag: boolean
         }
         Insert: {
           actual_result?: string | null
           ai_prob: number
           best_odds: number
           bookmaker: string
+          closing_pinn_price?: number | null
+          clv_pct?: number | null
           confidence_tier?: string
           consensus_prob?: number | null
           created_at?: string
@@ -126,6 +133,7 @@ export type Database = {
           market?: string
           match_id: string
           model_scores?: Json
+          opening_pinn_price?: number | null
           outcome: string
           placed_at?: string | null
           placed_odds?: number | null
@@ -136,13 +144,17 @@ export type Database = {
           selection?: string | null
           settled_at?: string | null
           sharp_alert?: boolean
+          sharpened_prob?: number | null
           status?: string
+          steam_flag?: boolean
         }
         Update: {
           actual_result?: string | null
           ai_prob?: number
           best_odds?: number
           bookmaker?: string
+          closing_pinn_price?: number | null
+          clv_pct?: number | null
           confidence_tier?: string
           consensus_prob?: number | null
           created_at?: string
@@ -153,6 +165,7 @@ export type Database = {
           market?: string
           match_id?: string
           model_scores?: Json
+          opening_pinn_price?: number | null
           outcome?: string
           placed_at?: string | null
           placed_odds?: number | null
@@ -163,7 +176,9 @@ export type Database = {
           selection?: string | null
           settled_at?: string | null
           sharp_alert?: boolean
+          sharpened_prob?: number | null
           status?: string
+          steam_flag?: boolean
         }
         Relationships: [
           {
@@ -294,6 +309,51 @@ export type Database = {
           },
         ]
       }
+      performance_metrics: {
+        Row: {
+          avg_clv_pct: number | null
+          brier: number
+          computed_at: string
+          ece: number
+          hit_rate: number
+          id: string
+          log_loss: number
+          market: string
+          n_bets: number
+          n_won: number
+          roi_pct: number
+          window_days: number
+        }
+        Insert: {
+          avg_clv_pct?: number | null
+          brier: number
+          computed_at?: string
+          ece: number
+          hit_rate: number
+          id?: string
+          log_loss: number
+          market: string
+          n_bets: number
+          n_won: number
+          roi_pct: number
+          window_days: number
+        }
+        Update: {
+          avg_clv_pct?: number | null
+          brier?: number
+          computed_at?: string
+          ece?: number
+          hit_rate?: number
+          id?: string
+          log_loss?: number
+          market?: string
+          n_bets?: number
+          n_won?: number
+          roi_pct?: number
+          window_days?: number
+        }
+        Relationships: []
+      }
       predictions: {
         Row: {
           match_id: string
@@ -344,6 +404,42 @@ export type Database = {
           created_at?: string
           email?: string | null
           id?: string
+        }
+        Relationships: []
+      }
+      steam_signals: {
+        Row: {
+          detected_at: string
+          divergence: number
+          id: string
+          market: string
+          match_id: string
+          selection: string
+          sharp_fair_prob: number
+          sharp_move_pct: number
+          soft_move_pct: number
+        }
+        Insert: {
+          detected_at?: string
+          divergence: number
+          id?: string
+          market: string
+          match_id: string
+          selection: string
+          sharp_fair_prob: number
+          sharp_move_pct: number
+          soft_move_pct: number
+        }
+        Update: {
+          detected_at?: string
+          divergence?: number
+          id?: string
+          market?: string
+          match_id?: string
+          selection?: string
+          sharp_fair_prob?: number
+          sharp_move_pct?: number
+          soft_move_pct?: number
         }
         Relationships: []
       }

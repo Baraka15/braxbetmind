@@ -384,7 +384,12 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     // predicted win rates match observed outcomes over the last N settled bets.
     const calibration = await getCalibration();
     const calibratedProb = calibrateProb(calibration, sel.market, sel.finalProb);
-    const { edgePct, impliedProb } = edgeForOutcome(calibratedProb, sel.bestOdds);
+    // γ-sharpening: pull toward 0.5 to combat residual overconfidence.
+    // γ adapts to calibrator sample size (fewer samples → more shrink).
+    const marketCal = calibration.perMarket[sel.market] ?? calibration.global;
+    const gamma = adaptiveGamma(marketCal.n);
+    const sharpenedProb = sharpen(calibratedProb, gamma);
+    const { edgePct, impliedProb } = edgeForOutcome(sharpenedProb, sel.bestOdds);
     const edgeGate = fixtureFallback ? FIXTURE_MIN_EDGE : MIN_EDGE;
     if (edgePct < edgeGate) {
       await supabaseAdmin.from("bets").delete().eq("match_id", ev.id).eq("market", sel.market).eq("selection", sel.selection);
@@ -394,7 +399,7 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     // L7: AI reasoning (best-effort)
     let tier: "S" | "A" | "B" | "C" = edgePct >= 0.08 ? "S" : edgePct >= 0.05 ? "A" : edgePct >= 0.03 ? "B" : "C";
     let rationale = `${(edgePct * 100).toFixed(1)}% edge vs market consensus.`;
-    let finalProb = calibratedProb;
+    let finalProb = sharpenedProb;
     try {
       if (fixtureFallback) throw new Error("skip-ai-for-fixture-fallback");
       const r = await reason({
@@ -406,8 +411,8 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
       if (r) {
         tier = r.tier;
         rationale = r.rationale;
-        // Re-calibrate the AI-adjusted prob so it stays on the same scale.
-        finalProb = calibrateProb(calibration, sel.market, r.adjustedProb);
+        // Re-calibrate + re-sharpen the AI-adjusted prob so it stays on the same scale.
+        finalProb = sharpen(calibrateProb(calibration, sel.market, r.adjustedProb), gamma);
       }
     } catch { /* keep defaults */ }
 
@@ -421,6 +426,12 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
     }
     const stake = kellyStakePct(finalProb, sel.bestOdds, KELLY_FRACTION, MAX_STAKE_PCT);
 
+    const steamHit = sel.market === "h2h" ? steamBySide.get(sel.selection as "home" | "draw" | "away") : undefined;
+    const openingPinnPrice =
+      sel.market === "h2h" && pinnOpening
+        ? pinnOpening[sel.selection as "home" | "draw" | "away"]
+        : undefined;
+
     await supabaseAdmin.from("bets").upsert({
       match_id: ev.id,
       market: sel.market,
@@ -432,13 +443,21 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
       implied_prob: impliedProb,
       edge_pct: finalEdge,
       kelly_stake_pct: stake,
-      sharp_alert: sharpAlert,
+      sharp_alert: sharpAlert || Boolean(steamHit),
+      steam_flag: Boolean(steamHit),
+      opening_pinn_price: openingPinnPrice ?? null,
+      sharpened_prob: sharpenedProb,
       confidence_tier: tier,
       rationale,
       model_scores: {
         ...sel.layers,
         rawEnsembleProb: sel.finalProb,
         calibratedProb,
+        sharpenedProb,
+        gamma,
+        steam: steamHit
+          ? { divergence: steamHit.divergence, sharpMove: steamHit.sharpMove, softMove: steamHit.softMove }
+          : null,
         calibration: {
           method: (calibration.perMarket[sel.market] ?? calibration.global).method,
           n: (calibration.perMarket[sel.market] ?? calibration.global).n,
@@ -449,7 +468,7 @@ async function processEvent(ev: OddsApiEvent, summary: { matches: number; bets: 
       consensus_prob: sel.layers.marketConsensus,
     }, { onConflict: "match_id,market,selection" });
     summary.bets++;
-    if (sharpAlert) summary.sharp++;
+    if (sharpAlert || steamHit) summary.sharp++;
     usedTeams.add(homeKey);
     usedTeams.add(awayKey);
   }
